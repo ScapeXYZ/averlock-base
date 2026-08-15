@@ -28,6 +28,24 @@ export const incomingFundsGuardFactoryAbi = parseAbi([
   "function createIncomingGuard((address owner,address asset,address vault,uint256 threshold,uint16 protectBps,uint64 releaseDuration,bytes32 ruleId) config) returns (address guard)",
   "function predictIncomingGuardAddress((address owner,address asset,address vault,uint256 threshold,uint16 protectBps,uint64 releaseDuration,bytes32 ruleId) config) view returns (address predicted)",
 ]);
+export const incomingFundsGuardAbi = parseAbi([
+  "function owner() view returns (address)",
+  "function asset() view returns (address)",
+  "function protectionVault() view returns (address)",
+  "function threshold() view returns (uint256)",
+  "function protectBps() view returns (uint16)",
+  "function releaseDuration() view returns (uint64)",
+  "function ruleId() view returns (bytes32)",
+  "function totalProcessed() view returns (uint256)",
+  "function processingCount() view returns (uint256)",
+  "function process() returns (uint256 positionId)",
+]);
+export const incomingGuardCreatedEvent = parseAbiItem(
+  "event IncomingGuardCreated(address indexed guard,address indexed owner,bytes32 indexed ruleId,address asset,address vault,uint256 threshold,uint16 protectBps,uint64 releaseDuration,uint64 createdAt)",
+);
+export const incomingFundsProcessedEvent = parseAbiItem(
+  "event IncomingFundsProcessed(bytes32 indexed ruleId,address indexed owner,address indexed processor,address asset,uint256 processedAmount,uint256 protectedAmount,uint256 availableAmount,uint256 positionId,uint64 startTimestamp,uint64 endTimestamp)",
+);
 export const v2ProtectionVaultAbi = baseVaultAbi;
 export const baseErc20Abi = parseAbi([
   "function symbol() view returns (string)",

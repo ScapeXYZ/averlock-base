@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./incoming-funds-guard.css";
 
 :root{--paper:#080b12;--ink:#f5f7ff}
 *{box-sizing:border-box}

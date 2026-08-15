@@ -168,7 +168,7 @@ export async function readWallet(owner: Address) {
   ).filter(({ guard }) => getAddress(guard.owner) === getAddress(owner));
   if (!deploymentConfigured)
     throw new Error(`AVERLOCK contracts are unavailable on ${activeChain.name}.`);
-  const [symbol, decimals] = await Promise.all([
+  const [symbol, decimals, ethBalance, usdcBalance] = await Promise.all([
     basePublicClient.readContract({
       address: baseContracts.approvedToken,
       abi: baseErc20Abi,
@@ -178,6 +178,13 @@ export async function readWallet(owner: Address) {
       address: baseContracts.approvedToken,
       abi: baseErc20Abi,
       functionName: "decimals",
+    }),
+    basePublicClient.getBalance({ address: owner }),
+    basePublicClient.readContract({
+      address: baseContracts.approvedToken,
+      abi: baseErc20Abi,
+      functionName: "balanceOf",
+      args: [owner],
     }),
   ]);
   const positions = await Promise.all(
@@ -212,6 +219,8 @@ export async function readWallet(owner: Address) {
     positions,
     symbol,
     decimals: Number(decimals),
+    ethBalance,
+    usdcBalance,
     warning: discovered.warning,
   };
 }

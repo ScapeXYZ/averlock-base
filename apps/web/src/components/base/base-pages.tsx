@@ -9,6 +9,7 @@ import {
   getAddress,
   parseUnits,
 } from "viem";
+import type { Address } from "viem";
 import {
   useAccount,
   usePublicClient,
@@ -41,6 +42,14 @@ import {
   type BaseGuard,
 } from "@/lib/base/data";
 import { compactAddress } from "@/lib/base/format";
+import {
+  IncomingGuardCreatePage,
+  IncomingGuardDetailPage,
+} from "@/components/base/incoming-funds-guard";
+import {
+  isIncomingGuardRoute,
+  localIncomingGuards,
+} from "@/lib/base/incoming";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -191,6 +200,14 @@ export function DashboardPage() {
         {data.warning && <p className="base-warning">{data.warning}</p>}
         <section className="metric-grid">
           <Metric
+            label="Wallet ETH"
+            value={`${Number(formatUnits(data.ethBalance, 18)).toFixed(5)} ETH`}
+          />
+          <Metric
+            label="Wallet USDC"
+            value={`${formatUnits(data.usdcBalance, data.decimals)} ${data.symbol}`}
+          />
+          <Metric
             label="Total protected"
             value={`${formatUnits(protectedTotal, data.decimals)} ${data.symbol}`}
           />
@@ -249,7 +266,8 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function GuardsPage() {
-  const { chainId, isConnected, data, error } = useWalletData();
+  const { address, chainId, isConnected, data, error } = useWalletData();
+  const incomingGuards = address ? localIncomingGuards(address) : [];
   if (!isConnected)
     return (
       <Shell>
@@ -290,13 +308,28 @@ export function GuardsPage() {
         ) : (
           <>
             {data.warning && <p className="base-warning">{data.warning}</p>}
+            {incomingGuards.length > 0 && (
+              <div className="base-card-grid incoming-card-list">
+                {incomingGuards.map((item) => (
+                  <Link href={`/guards/${item.guard}`} className="base-guard-card" key={item.guard}>
+                    <span><Icon name="shield" /></span>
+                    <div>
+                      <small>Incoming Funds Guard</small>
+                      <h3>{compactAddress(item.guard, 12, 10)}</h3>
+                      <p>Dedicated USDC receipt address</p>
+                    </div>
+                    <b>View rule</b>
+                  </Link>
+                ))}
+              </div>
+            )}
             {data.guards.length ? (
               <GuardCards
                 items={data.guards.map((x) => x.guard)}
                 decimals={data.decimals}
                 symbol={data.symbol}
               />
-            ) : (
+            ) : !incomingGuards.length ? (
               <State
                 title="No guards discovered"
                 body="No confirmed guard IDs are available for this wallet."
@@ -306,7 +339,7 @@ export function GuardsPage() {
                   </Link>
                 }
               />
-            )}
+            ) : null}
           </>
         )}
       </main>
@@ -354,7 +387,7 @@ function GuardCards({
   );
 }
 
-export function GuardDetailPage({ guardId }: { guardId: string }) {
+function ManualGuardDetailPage({ guardId }: { guardId: string }) {
   const { address, chainId } = useAccount();
   const [guard, setGuard] = useState<BaseGuard>();
   const [meta, setMeta] = useState({ symbol: "", decimals: 18 });
@@ -558,6 +591,12 @@ export function GuardDetailPage({ guardId }: { guardId: string }) {
       </main>
     </Shell>
   );
+}
+
+export function GuardDetailPage({ guardId }: { guardId: string }) {
+  return isIncomingGuardRoute(guardId)
+    ? <IncomingGuardDetailPage guardAddress={getAddress(guardId) as Address} />
+    : <ManualGuardDetailPage guardId={guardId} />;
 }
 
 export function VaultsPage() {
@@ -825,7 +864,7 @@ function Row({
   );
 }
 
-export function CreateGuardPage() {
+function ManualCreateGuardPage({ onIncoming }: { onIncoming: () => void }) {
   const router = useRouter();
   const { address, chainId, isConnected } = useAccount();
   const { switchChain } = useSwitchChain();
@@ -967,6 +1006,10 @@ export function CreateGuardPage() {
           title="Commit to your protection plan"
           body="Choose a transparent rule, fund it after creation, then execute it into a non-cancelable vault when eligible."
         />
+        <div className="guard-type-choice" aria-label="Guard type">
+          <button className="primary-button" aria-pressed="true">Manual / Cooldown Guard</button>
+          <button className="secondary-button" onClick={onIncoming}>Incoming Funds Guard</button>
+        </div>
         {!deploymentConfigured ? (
           <State
             title="Deployment not configured"
@@ -993,16 +1036,6 @@ export function CreateGuardPage() {
         ) : (
           <section className="create-base-grid">
             <div className="base-panel form-stack">
-              <label>
-                Protection type
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value })}
-                >
-                  <option value="0">Cooldown / Manual Protection</option>
-                  <option value="1">Stablecoin Protection</option>
-                </select>
-              </label>
               <label>
                 Approved asset
                 <input
@@ -1092,4 +1125,11 @@ export function CreateGuardPage() {
       </main>
     </Shell>
   );
+}
+
+export function CreateGuardPage() {
+  const [kind, setKind] = useState<"manual" | "incoming">("manual");
+  return kind === "incoming"
+    ? <IncomingGuardCreatePage onManual={() => setKind("manual")} />
+    : <ManualCreateGuardPage onIncoming={() => setKind("incoming")} />;
 }
