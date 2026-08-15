@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createPublicClient, decodeEventLog, http as viemHttp, isAddress, parseAbiItem, zeroAddress } from "viem";
 import { createRateLimitedFetch, requestsPerSecond } from "./rpc-pacer.mjs";
-import { deploymentIdentity, EVENT_UPSERT_SQL } from "./event-store.mjs";
+import { activityRowsForDecoded, compatibleDeploymentIdentity, deploymentIdentity, EVENT_UPSERT_SQL } from "./event-store.mjs";
 
 const required = (name) => {
   const value = process.env[name];
@@ -68,7 +68,7 @@ for (const statement of ["ALTER TABLE events ADD COLUMN block_timestamp TEXT", "
 }
 const identity = deploymentIdentity({ chainId: config.chainId, addresses, v2 });
 const storedIdentity = db.prepare("SELECT value FROM metadata WHERE key = 'deployment_identity'").get()?.value;
-if (storedIdentity && storedIdentity !== identity) configurationError = `Database deployment identity mismatch; use a separate database for chain ${config.chainId}`;
+if (!compatibleDeploymentIdentity(storedIdentity, identity)) configurationError = `Database deployment identity mismatch; use a separate database for chain ${config.chainId}`;
 else db.prepare("INSERT INTO metadata(key,value) VALUES('deployment_identity',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(identity);
 db.prepare("UPDATE events SET chain_id = ? WHERE chain_id IS NULL").run(config.chainId);
 db.prepare("UPDATE events SET status = 'Confirmed' WHERE status IS NULL").run();
@@ -76,6 +76,16 @@ const cursor = db.prepare("SELECT last_processed_block FROM cursor WHERE id = 1"
 const setCursor = db.prepare("INSERT INTO cursor (id,last_processed_block) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET last_processed_block=excluded.last_processed_block");
 const deleteFrom = db.prepare("DELETE FROM events WHERE CAST(block_number AS INTEGER) >= CAST(? AS INTEGER)");
 const insert = db.prepare(EVENT_UPSERT_SQL);
+const v2BackfillKey = v2 ? `v2_activity_backfill:${deploymentIdentity(v2)}` : undefined;
+if (!configurationError && v2BackfillKey && !db.prepare("SELECT value FROM metadata WHERE key = ?").get(v2BackfillKey)) {
+  db.exec("BEGIN");
+  try {
+    const saved = cursor.get();
+    if (saved && BigInt(saved.last_processed_block) >= v2.startBlock) setCursor.run((v2.startBlock - 1n).toString());
+    db.prepare("INSERT INTO metadata(key,value) VALUES(?, 'in_progress')").run(v2BackfillKey);
+    db.exec("COMMIT");
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
+}
 // This fetch sits below viem, so every JSON-RPC method shares one process-wide pace.
 // In particular, the concurrent event filters cannot create an HTTP burst.
 const rpcFetch = createRateLimitedFetch({
@@ -142,7 +152,7 @@ async function sync() {
         const decoded = decode(log);
         if (decoded?.eventName === "IncomingGuardCreated") guardOwners.set(decoded.args.guard.toLowerCase(), decoded.args.owner.toLowerCase());
       }
-      if (v2 && guardOwners.size) {
+      if (v2 && guardOwners.size && to >= v2.startBlock) {
         const guards = [...guardOwners.keys()];
         const [processed, received] = await Promise.all([
           retry(`IncomingFundsProcessed logs ${from}-${to}`, () => client.getLogs({ address: guards, event: incomingFundsProcessed, fromBlock: from < v2.startBlock ? v2.startBlock : from, toBlock: to })),
@@ -160,19 +170,16 @@ async function sync() {
         for (const log of logs) {
           const decoded = decode(log); if (!decoded || !log.transactionHash || log.logIndex == null || !log.blockHash || !log.blockNumber) continue;
           const args = Object.fromEntries(Object.entries(decoded.args).map(([key, value]) => [key, normalize(value)]));
-          const eventName = decoded.eventName === "Transfer" ? "IncomingFundsReceived" : decoded.eventName;
-          const owner = (args.owner || args.beneficiary || (decoded.eventName === "Transfer" ? guardOwners.get(args.to?.toString().toLowerCase()) : "") || "").toString().toLowerCase() || null;
-          const payload = decoded.eventName === "Transfer" ? { guard: args.to, sender: args.from, amount: args.value } : args;
           const timestamp = timestamps.get(log.blockNumber.toString());
-          insert.run(log.transactionHash, Number(log.logIndex), log.blockNumber.toString(), log.blockHash, log.address.toLowerCase(), eventName, owner, args.guardId || null, args.positionId || null, JSON.stringify(payload), timestamp, config.chainId, "Confirmed");
-          if (decoded.eventName === "IncomingFundsProcessed" && BigInt(args.availableAmount || 0) > 0n) {
-            insert.run(log.transactionHash, Number(log.logIndex) + 1_000_000, log.blockNumber.toString(), log.blockHash, log.address.toLowerCase(), "AvailableFundsReturned", owner, null, args.positionId || null, JSON.stringify({ amount: args.availableAmount, positionId: args.positionId, guard: log.address }), timestamp, config.chainId, "Confirmed");
-          }
+          const projected = activityRowsForDecoded({ decodedEventName: decoded.eventName, args, contractAddress: log.address, transactionHash: log.transactionHash, logIndex: Number(log.logIndex), blockNumber: log.blockNumber.toString(), blockHash: log.blockHash, blockTimestamp: timestamp, chainId: config.chainId, guardOwners });
+          if (projected.guard && projected.owner) guardOwners.set(projected.guard, projected.owner);
+          for (const row of projected.rows) insert.run(...row);
         }
         setCursor.run(to.toString()); db.exec("COMMIT");
       } catch (error) { db.exec("ROLLBACK"); throw error; }
       from = to + 1n;
     }
+    if (v2BackfillKey) db.prepare("UPDATE metadata SET value = 'complete' WHERE key = ?").run(v2BackfillKey);
     lastError = undefined;
   } catch (error) { lastError = error instanceof Error ? error.message : String(error); }
   finally { syncing = false; }

@@ -13,6 +13,13 @@ complete range is committed.
 
 The filtered Base log range is configurable with `AVERLOCK_LOG_BLOCK_RANGE` and defaults to 2,000.
 
+On the first restart after V2 activity support is deployed, the indexer records a durable
+V2 backfill marker and rewinds its cursor once to `AVERLOCK_V2_START_BLOCK`. It preserves
+legacy rows, discovers every factory-created Incoming Guard, and replays only the configured
+contracts/guards through the confirmed head. Interrupted backfills resume from SQLite and do
+not restart from the beginning. An existing pre-V2 deployment identity is upgraded in place
+when its chain and legacy contract addresses match; no database reset is required.
+
 All JSON-RPC calls share a global `AVERLOCK_RPC_REQUESTS_PER_SECOND` limiter (default `2`). A
 429 honors `Retry-After` when supplied, otherwise retries with exponential backoff and jitter;
 `/health` and `/sync` report `fatal_configuration_error`, `rate_limited`, `retrying`, `syncing`,

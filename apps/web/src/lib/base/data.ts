@@ -134,7 +134,7 @@ export async function discoverGuards(owner: Address) {
 }
 export async function discoverActivity(owner: Address) {
   const base = process.env.NEXT_PUBLIC_AVERLOCK_INDEXER_URL;
-  const local = await Promise.all(localAnchors(owner).map(async (item) => {
+  const local: ActivityAnchor[] = await Promise.all(localAnchors(owner).map(async (item) => {
     const block = await basePublicClient.getBlock({ blockNumber: BigInt(item.blockNumber) });
     return { transaction_hash: item.transactionHash, block_number: item.blockNumber, block_timestamp: block.timestamp.toString(), event_name: "GuardCreated", status: "Confirmed", payload: { guardId: item.guardId } } satisfies ActivityAnchor;
   }));

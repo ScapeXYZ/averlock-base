@@ -773,7 +773,7 @@ export function ActivityPage() {
           <div className="activity-simple">
             {items.map((x) => (
               <a
-                key={`${x.transaction_hash}-${x.event_name}`}
+                key={`${x.transaction_hash}-${x.log_index ?? x.event_name}`}
                 href={`${activeChain.blockExplorers.default.url}/tx/${x.transaction_hash}`}
                 target="_blank"
                 rel="noreferrer"
