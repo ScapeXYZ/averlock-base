@@ -19,6 +19,16 @@ export const baseVaultAbi = parseAbi([
   "function isCompleted(uint256) view returns (bool)",
   "function claim(uint256) returns (uint256 amount)",
 ]);
+export const incomingFundsGuardFactoryAbi = parseAbi([
+  "function asset() view returns (address)",
+  "function protectionVault() view returns (address)",
+  "function guardForRule(address owner,bytes32 ruleId) view returns (address)",
+  "function guardsOf(address owner) view returns (address[])",
+  "function guardCountOf(address owner) view returns (uint256)",
+  "function createIncomingGuard((address owner,address asset,address vault,uint256 threshold,uint16 protectBps,uint64 releaseDuration,bytes32 ruleId) config) returns (address guard)",
+  "function predictIncomingGuardAddress((address owner,address asset,address vault,uint256 threshold,uint16 protectBps,uint64 releaseDuration,bytes32 ruleId) config) view returns (address predicted)",
+]);
+export const v2ProtectionVaultAbi = baseVaultAbi;
 export const baseErc20Abi = parseAbi([
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",

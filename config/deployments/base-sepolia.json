@@ -3,9 +3,18 @@
   "chainId": 84532,
   "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   "contracts": {
-    "guardManager": "0xB2d5B8a9dF91466F07fcBA92f334cb143197151d",
-    "protectionVault": "0x5f7a95160A34e84B91e25903b69B8B378094a9B0"
+    "manual": {
+      "guardManager": "0xB2d5B8a9dF91466F07fcBA92f334cb143197151d",
+      "protectionVault": "0x5f7a95160A34e84B91e25903b69B8B378094a9B0"
+    },
+    "v2": {
+      "protectionVault": "0x914Eb41bE452f192e822c82ed83cC2CEAf3c3D23",
+      "incomingFundsGuardFactory": "0x355c5ECB31EA54092f56263c591B44f156B325C5"
+    }
   },
-  "deploymentBlock": 45438094,
+  "startBlocks": {
+    "manual": 45438094,
+    "v2": 45527065
+  },
   "writesEnabled": true
 }

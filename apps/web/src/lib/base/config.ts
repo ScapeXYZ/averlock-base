@@ -2,7 +2,7 @@ import { createPublicClient, http } from "viem";
 import { Attribution } from "ox/erc8021";
 import { createConfig } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { activeChain, activeDeployment, deploymentAvailable, deploymentEnvironment, explorerUrl, requireDeployedContracts, usdcAddress, writesEnabled } from "./deployments";
+import { activeChain, activeDeployment, deploymentAvailable, deploymentEnvironment, explorerUrl, requireDeployedContracts, requireV2Contracts, usdcAddress, writesEnabled } from "./deployments";
 
 export const AVERLOCK_BUILDER_CODE = "bc_wxycqary";
 export const AVERLOCK_DATA_SUFFIX = Attribution.toDataSuffix({ codes: [AVERLOCK_BUILDER_CODE] });
@@ -12,6 +12,11 @@ export const baseContracts = {
   get guardManager() { return requireDeployedContracts().guardManager; },
   get protectionVault() { return requireDeployedContracts().protectionVault; },
   approvedToken: usdcAddress,
+} as const;
+
+export const baseV2Contracts = {
+  get protectionVault() { return requireV2Contracts().protectionVault; },
+  get incomingFundsGuardFactory() { return requireV2Contracts().incomingFundsGuardFactory; },
 } as const;
 
 export const deploymentConfigured = deploymentAvailable;

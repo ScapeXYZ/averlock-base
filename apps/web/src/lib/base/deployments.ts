@@ -4,13 +4,21 @@ import baseSepoliaJson from "../../../../../config/deployments/base-sepolia.json
 import { baseMainnet, baseSepolia } from "./chains";
 
 export type DeploymentEnvironment = "staging" | "production";
-export type AverlockContracts = Readonly<{ guardManager: Address; protectionVault: Address }>;
+export type ManualGuardContracts = Readonly<{ guardManager: Address; protectionVault: Address }>;
+export type V2Contracts = Readonly<{
+  protectionVault: Address;
+  incomingFundsGuardFactory: Address;
+}>;
+export type AverlockContracts = Readonly<{
+  manual?: ManualGuardContracts;
+  v2?: V2Contracts;
+}>;
 export type Deployment = Readonly<{
   environment: DeploymentEnvironment;
   chainId: 84532 | 8453;
   usdc: Address;
   contracts: Partial<AverlockContracts>;
-  deploymentBlock: number | null;
+  startBlocks: Readonly<{ manual: number | null; v2: number | null }>;
   writesEnabled: boolean;
 }>;
 
@@ -21,7 +29,12 @@ function deployment(value: typeof baseSepoliaJson | typeof baseMainnetJson): Dep
     chainId: value.chainId as Deployment["chainId"],
     usdc: getAddress(value.usdc),
     contracts: Object.fromEntries(
-      Object.entries(value.contracts).map(([key, address]) => [key, getAddress(address)]),
+      Object.entries(value.contracts).map(([version, contracts]) => [
+        version,
+        Object.fromEntries(
+          Object.entries(contracts).map(([name, address]) => [name, getAddress(address)]),
+        ),
+      ]),
     ),
   };
 }
@@ -47,16 +60,31 @@ export const activeChain = activeDeployment.chainId === baseSepolia.id ? baseSep
 export const usdcAddress = activeDeployment.usdc;
 export const explorerUrl = activeChain.blockExplorers.default.url;
 
-export function hasDeployedContracts(value: Deployment = activeDeployment): value is Deployment & { contracts: AverlockContracts } {
-  return Boolean(value.contracts.guardManager && value.contracts.protectionVault);
+export function hasDeployedContracts(
+  value: Deployment = activeDeployment,
+): value is Deployment & { contracts: AverlockContracts & { manual: ManualGuardContracts } } {
+  return Boolean(value.contracts.manual?.guardManager && value.contracts.manual.protectionVault);
+}
+
+export function hasV2Contracts(
+  value: Deployment = activeDeployment,
+): value is Deployment & { contracts: AverlockContracts & { v2: V2Contracts } } {
+  return Boolean(value.contracts.v2?.protectionVault && value.contracts.v2.incomingFundsGuardFactory);
 }
 
 export const deploymentAvailable = hasDeployedContracts(activeDeployment);
 export const writesEnabled = activeDeployment.writesEnabled && deploymentAvailable;
 
-export function requireDeployedContracts(): AverlockContracts {
+export function requireDeployedContracts(): ManualGuardContracts {
   if (!hasDeployedContracts(activeDeployment)) {
     throw new Error(`AVERLOCK deployment is unavailable for ${deploymentEnvironment}.`);
   }
-  return activeDeployment.contracts;
+  return activeDeployment.contracts.manual;
+}
+
+export function requireV2Contracts(): V2Contracts {
+  if (!hasV2Contracts(activeDeployment)) {
+    throw new Error(`AVERLOCK V2 deployment is unavailable for ${deploymentEnvironment}.`);
+  }
+  return activeDeployment.contracts.v2;
 }

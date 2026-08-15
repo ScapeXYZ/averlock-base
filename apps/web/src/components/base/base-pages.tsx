@@ -783,13 +783,13 @@ export function SettingsPage() {
           <Row label="Contract version" value={version} />
           <Row
             label="GuardManager"
-            value={activeDeployment.contracts.guardManager || "Not deployed"}
-            link={activeDeployment.contracts.guardManager && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.guardManager}`}
+            value={activeDeployment.contracts.manual?.guardManager || "Not deployed"}
+            link={activeDeployment.contracts.manual?.guardManager && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.manual.guardManager}`}
           />
           <Row
             label="ProtectionVault"
-            value={activeDeployment.contracts.protectionVault || "Not deployed"}
-            link={activeDeployment.contracts.protectionVault && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.protectionVault}`}
+            value={activeDeployment.contracts.manual?.protectionVault || "Not deployed"}
+            link={activeDeployment.contracts.manual?.protectionVault && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.manual.protectionVault}`}
           />
           <Row
             label="Approved token"

@@ -6,10 +6,16 @@ and all writes remain unavailable until verified Mainnet deployment values are a
 
 - Chain ID: `84532`
 - RPC: `https://sepolia.base.org`
-- BaseGuardManager: `0xB2d5B8a9dF91466F07fcBA92f334cb143197151d`
-- BaseProtectionVault: `0x5f7a95160A34e84B91e25903b69B8B378094a9B0`
+- Manual/cooldown BaseGuardManager: `0xB2d5B8a9dF91466F07fcBA92f334cb143197151d`
+- Manual/cooldown BaseProtectionVault: `0x5f7a95160A34e84B91e25903b69B8B378094a9B0`
+- V2 BaseProtectionVault: `0x914Eb41bE452f192e822c82ed83cC2CEAf3c3D23`
+- V2 IncomingFundsGuardFactory: `0x355c5ECB31EA54092f56263c591B44f156B325C5`
 - Approved Base Sepolia USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
-- Indexer start block: `45438094`
+- Manual/indexer start block: `45438094`
+- V2 deployment start block: `45527065`
+
+The frontend and indexer remain wired to the manual/cooldown contracts. The V2 addresses are
+recorded in the typed staging manifest for future Incoming Funds Guard integration.
 
 Production selects Base Mainnet (chain ID `8453`) and official Base USDC
 `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`. It intentionally defines no GuardManager,

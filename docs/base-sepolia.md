@@ -9,12 +9,18 @@
 | Gas token | ETH |
 | Protection asset | Base Sepolia USDC (6 decimals) |
 | RPC | `https://sepolia.base.org` |
-| BaseGuardManager | `0xB2d5B8a9dF91466F07fcBA92f334cb143197151d` |
-| BaseProtectionVault | `0x5f7a95160A34e84B91e25903b69B8B378094a9B0` |
+| Manual/cooldown BaseGuardManager | `0xB2d5B8a9dF91466F07fcBA92f334cb143197151d` |
+| Manual/cooldown BaseProtectionVault | `0x5f7a95160A34e84B91e25903b69B8B378094a9B0` |
+| V2 BaseProtectionVault | `0x914Eb41bE452f192e822c82ed83cC2CEAf3c3D23` |
+| V2 IncomingFundsGuardFactory | `0x355c5ECB31EA54092f56263c591B44f156B325C5` |
 | USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| Deployment/indexer block | `45438094` |
+| Manual deployment/indexer start block | `45438094` |
+| V2 deployment start block | `45527065` |
 
 No contract deployment is part of the web or indexer release process.
+The current UI and event indexer remain wired only to the manual/cooldown GuardManager and its
+legacy vault. The V2 factory and vault are recorded for typed access but are not wired into either
+surface yet.
 
 ## Contract lifecycle
 
