@@ -1,0 +1,13 @@
+{
+  "name": "@averlock/event-indexer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:base-rpc": "node --test test/base-sepolia-get-logs.test.mjs"
+  },
+  "engines": { "node": ">=22.5.0" },
+  "dependencies": { "viem": "2.55.10" }
+}

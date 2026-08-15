@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Next.js and frontend outputs
+.next/
+out/
+dist/
+build/
+coverage/
+
+# Foundry outputs and local dependencies
+cache/
+broadcast/
+/packages/contracts/lib/
+dependencies/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Logs and generated TypeScript state
+*.log
+*.tsbuildinfo
+
+# Local editor files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
