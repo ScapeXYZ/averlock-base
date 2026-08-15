@@ -25,6 +25,7 @@ import {
   activeDeployment,
   deploymentConfigured,
   deploymentEnvironment,
+  explorerUrl,
   writesEnabled,
 } from "@/lib/base/config";
 import {
@@ -39,9 +40,10 @@ import {
   readGuard,
   readWallet,
   saveAnchor,
+  summarizeVaultAccounting,
   type BaseGuard,
 } from "@/lib/base/data";
-import { compactAddress } from "@/lib/base/format";
+import { compactAddress, formatBlockTimestamp } from "@/lib/base/format";
 import {
   IncomingGuardCreatePage,
   IncomingGuardDetailPage,
@@ -58,6 +60,23 @@ function Shell({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+const activityNames: Record<string, string> = {
+  IncomingGuardCreated: "Incoming Guard created",
+  GuardFunded: "Manual guard funded",
+  IncomingFundsReceived: "USDC received by Incoming Guard",
+  IncomingFundsProcessed: "Protection processed",
+  AvailableFundsReturned: "Available amount returned",
+  PositionCreated: "Vault position created",
+  Claimed: "Vault funds claimed",
+};
+function activityName(eventName: string) {
+  return activityNames[eventName] || eventName.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+function activityAmount(eventName: string, payload: Record<string, string | number | boolean>, decimals: number, symbol: string) {
+  const raw = eventName === "IncomingFundsProcessed" ? payload.protectedAmount : payload.amount ?? payload.processedAmount ?? payload.availableAmount;
+  if (typeof raw !== "string" && typeof raw !== "number") return "";
+  return `${formatUnits(BigInt(raw), decimals)} ${symbol} · `;
 }
 function State({
   title,
@@ -175,11 +194,7 @@ export function DashboardPage() {
         </main>
       </Shell>
     );
-  const protectedTotal = data.positions.reduce(
-    (sum, x) => sum + x.position.totalDeposited,
-    0n,
-  );
-  const claimable = data.positions.reduce((sum, x) => sum + x.claimable, 0n);
+  const { protected: protectedTotal, claimable } = summarizeVaultAccounting(data.positions);
   return (
     <Shell>
       <main className="base-page">
@@ -208,7 +223,11 @@ export function DashboardPage() {
             value={`${formatUnits(data.usdcBalance, data.decimals)} ${data.symbol}`}
           />
           <Metric
-            label="Total protected"
+            label="Committed / waiting"
+            value={`${formatUnits(data.committed, data.decimals)} ${data.symbol}`}
+          />
+          <Metric
+            label="Vault protected"
             value={`${formatUnits(protectedTotal, data.decimals)} ${data.symbol}`}
           />
           <Metric
@@ -603,19 +622,20 @@ export function VaultsPage() {
   const { address, chainId, data, error, refresh } = useWalletData();
   const { writeContractAsync } = useWriteContract();
   const client = usePublicClient({ chainId: activeChain.id });
-  const [busy, setBusy] = useState<bigint>();
+  const [busy, setBusy] = useState("");
   const [actionError, setActionError] = useState("");
-  async function claim(id: bigint) {
+  async function claim(id: bigint, vaultAddress: Address) {
     if (!writesEnabled) {
       setActionError("Writes are disabled for this deployment environment.");
       return;
     }
     if (!address || !client) return;
-    setBusy(id);
+    const positionKey = `${vaultAddress}:${id}`;
+    setBusy(positionKey);
     setActionError("");
     try {
       const simulation = await client.simulateContract({
-        address: baseContracts.protectionVault,
+        address: vaultAddress,
         abi: baseVaultAbi,
         functionName: "claim",
         args: [id],
@@ -628,7 +648,7 @@ export function VaultsPage() {
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Claim stopped.");
     } finally {
-      setBusy(undefined);
+      setBusy("");
     }
   }
   return (
@@ -667,35 +687,34 @@ export function VaultsPage() {
             {data.positions.map((x) => (
               <article
                 className="base-vault-card"
-                key={x.position.id.toString()}
+                key={`${x.version}:${x.vaultAddress}:${x.position.id}`}
               >
                 <div>
-                  <small>Position #{x.position.id.toString()}</small>
+                  <small>{x.version === "v2" ? "V2 Incoming Funds" : "V1 Manual"} · Position #{x.position.id.toString()}</small>
                   <h3>
                     {formatUnits(x.position.totalDeposited, data.decimals)}{" "}
                     {data.symbol}
                   </h3>
                   <p>
-                    {formatUnits(x.locked, data.decimals)} locked ·{" "}
+                    {formatUnits(x.protectedRemaining, data.decimals)} protected remaining ·{" "}
+                    {formatUnits(x.vested, data.decimals)} vested ·{" "}
                     {formatUnits(x.claimable, data.decimals)} claimable
                   </p>
                   <p>
-                    {Number(
-                      (x.position.claimed * 10_000n) /
-                        x.position.totalDeposited,
-                    ) / 100}
-                    % claimed · release ends{" "}
-                    {new Date(
-                      Number(x.position.endTimestamp) * 1_000,
-                    ).toLocaleString()}
+                    {formatUnits(x.position.claimed, data.decimals)} claimed · release {formatBlockTimestamp(x.position.startTimestamp)} – {formatBlockTimestamp(x.position.endTimestamp)}
+                  </p>
+                  <p>
+                    <a href={`${explorerUrl}/address/${x.vaultAddress}`} target="_blank" rel="noreferrer">Vault contract</a>
+                    {x.sourceGuard && <> · <a href={`${explorerUrl}/address/${x.sourceGuard}`} target="_blank" rel="noreferrer">Source Incoming Guard</a></>}
+                    {x.transactionHash && <> · <a href={`${explorerUrl}/tx/${x.transactionHash}`} target="_blank" rel="noreferrer">Creation transaction</a></>}
                   </p>
                 </div>
                 <button
                   className="primary-button"
-                  disabled={x.claimable === 0n || busy === x.position.id}
-                  onClick={() => claim(x.position.id)}
+                  disabled={x.claimable === 0n || busy === `${x.vaultAddress}:${x.position.id}`}
+                  onClick={() => claim(x.position.id, x.vaultAddress)}
                 >
-                  {busy === x.position.id ? "Claiming…" : "Claim available"}
+                  {busy === `${x.vaultAddress}:${x.position.id}` ? "Claiming…" : "Claim available"}
                 </button>
               </article>
             ))}
@@ -763,8 +782,12 @@ export function ActivityPage() {
                   <Icon name="shield" />
                 </span>
                 <div>
-                  <strong>{x.event_name.replace(/([a-z])([A-Z])/g, "$1 $2")}</strong>
-                  <small>{x.payload.guardId ? `Guard #${x.payload.guardId} · ` : ""}Block {x.block_number}</small>
+                  <strong>{activityName(x.event_name)}</strong>
+                  <small>
+                    {activityAmount(x.event_name, x.payload, 6, "USDC")}
+                    {x.status || "Confirmed"} · Block {x.block_number}
+                    {x.block_timestamp ? ` · ${formatBlockTimestamp(BigInt(x.block_timestamp))}` : ""}
+                  </small>
                 </div>
                 <Icon name="external" />
               </a>

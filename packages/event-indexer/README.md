@@ -1,6 +1,8 @@
 # AVERLOCK event indexer
 
-This service indexes **only** the deployed AVERLOCK `BaseGuardManager` and `BaseProtectionVault`
+This service indexes **only** the configured AVERLOCK V1 manager/vault, V2 factory/vault,
+and Incoming Guard accounts discovered from that factory. Funding transfers are restricted
+to the configured USDC contract and discovered guard recipients; it never scans all Base logs.
 events. It does not index Base generally and is never a prerequisite for contract reads
 or the web application's readiness.
 
@@ -25,7 +27,7 @@ Endpoints:
 
 - `GET /health` — process and database health; never reports fully ready merely because it is alive.
 - `GET /sync` — honest indexed block, safe chain head, and lag.
-- `GET /activity?owner=0x...` — public AVERLOCK history for one owner.
+- `GET /activity?owner=0x...` — public AVERLOCK history for one owner, including confirmed block timestamps.
 - `GET /guards?owner=0x...` — receipt anchors for the Guards page.
 
 Run locally with `npm run start --workspace @averlock/event-indexer` after setting the variables

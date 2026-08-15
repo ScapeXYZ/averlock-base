@@ -14,11 +14,18 @@ export const baseGuardManagerAbi = parseAbi([
 export const baseVaultAbi = parseAbi([
   "function getPosition(uint256) view returns ((uint256 id,address asset,address beneficiary,uint256 totalDeposited,uint256 claimed,uint64 startTimestamp,uint64 endTimestamp,uint64 createdAt))",
   "function claimableAmount(uint256) view returns (uint256)",
+  "function vestedAmount(uint256) view returns (uint256)",
   "function remainingLockedAmount(uint256) view returns (uint256)",
   "function isFullyVested(uint256) view returns (bool)",
   "function isCompleted(uint256) view returns (bool)",
   "function claim(uint256) returns (uint256 amount)",
 ]);
+export const positionCreatedEvent = parseAbiItem(
+  "event PositionCreated(uint256 indexed positionId,address indexed depositor,address indexed beneficiary,address asset,uint256 amount,uint64 startTimestamp,uint64 endTimestamp,uint64 createdAt)",
+);
+export const claimedEvent = parseAbiItem(
+  "event Claimed(uint256 indexed positionId,address indexed beneficiary,address indexed asset,uint256 amount,uint256 totalClaimed)",
+);
 export const incomingFundsGuardFactoryAbi = parseAbi([
   "function asset() view returns (address)",
   "function protectionVault() view returns (address)",
