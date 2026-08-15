@@ -43,7 +43,10 @@ contract IncomingFundsGuardAccount is ReentrancyGuard {
     );
 
     error ZeroAddress();
+    error AddressHasNoCode(address account);
+    error ZeroRuleId();
     error ZeroThreshold();
+    error ThresholdProducesZeroProtection(uint256 threshold, uint16 protectBps);
     error InvalidProtectBps(uint16 protectBps);
     error InvalidReleaseDuration(uint64 releaseDuration);
     error BalanceBelowThreshold(uint256 balance, uint256 threshold);
@@ -62,8 +65,14 @@ contract IncomingFundsGuardAccount is ReentrancyGuard {
         if (owner_ == address(0) || asset_ == address(0) || vault_ == address(0)) {
             revert ZeroAddress();
         }
+        if (asset_.code.length == 0) revert AddressHasNoCode(asset_);
+        if (vault_.code.length == 0) revert AddressHasNoCode(vault_);
+        if (ruleId_ == bytes32(0)) revert ZeroRuleId();
         if (threshold_ == 0) revert ZeroThreshold();
         if (protectBps_ == 0 || protectBps_ > BPS_DENOMINATOR) revert InvalidProtectBps(protectBps_);
+        if (threshold_ < (BPS_DENOMINATOR + protectBps_ - 1) / protectBps_) {
+            revert ThresholdProducesZeroProtection(threshold_, protectBps_);
+        }
         if (releaseDuration_ < MIN_RELEASE_DURATION || releaseDuration_ > MAX_RELEASE_DURATION) {
             revert InvalidReleaseDuration(releaseDuration_);
         }

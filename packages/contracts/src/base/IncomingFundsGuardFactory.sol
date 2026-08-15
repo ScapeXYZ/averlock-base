@@ -7,6 +7,9 @@ import {GuardTypes} from "./libraries/GuardTypes.sol";
 /// @title IncomingFundsGuardFactory
 /// @notice Deterministically deploys immutable incoming-funds guard accounts.
 contract IncomingFundsGuardFactory {
+    address public immutable asset;
+    address public immutable protectionVault;
+
     mapping(address owner => address[] guards) private _ownerGuards;
     mapping(address owner => mapping(bytes32 ruleId => address guard)) public guardForRule;
 
@@ -24,6 +27,16 @@ contract IncomingFundsGuardFactory {
 
     error GuardAlreadyExists(address owner, bytes32 ruleId, address guard);
     error UnauthorizedCreator(address caller, address owner);
+    error InvalidAsset(address supplied, address expected);
+    error InvalidVault(address supplied, address expected);
+
+    constructor(address asset_, address vault_) {
+        if (asset_ == address(0) || vault_ == address(0)) revert IncomingFundsGuardAccount.ZeroAddress();
+        if (asset_.code.length == 0) revert IncomingFundsGuardAccount.AddressHasNoCode(asset_);
+        if (vault_.code.length == 0) revert IncomingFundsGuardAccount.AddressHasNoCode(vault_);
+        asset = asset_;
+        protectionVault = vault_;
+    }
 
     function createIncomingGuard(GuardTypes.IncomingGuardConfig calldata config) external returns (address guard) {
         _validate(config);
@@ -98,13 +111,19 @@ contract IncomingFundsGuardFactory {
         return _ownerGuards[owner].length;
     }
 
-    function _validate(GuardTypes.IncomingGuardConfig calldata config) private pure {
+    function _validate(GuardTypes.IncomingGuardConfig calldata config) private view {
         if (config.owner == address(0) || config.asset == address(0) || config.vault == address(0)) {
             revert IncomingFundsGuardAccount.ZeroAddress();
         }
+        if (config.asset != asset) revert InvalidAsset(config.asset, asset);
+        if (config.vault != protectionVault) revert InvalidVault(config.vault, protectionVault);
         if (config.threshold == 0) revert IncomingFundsGuardAccount.ZeroThreshold();
+        if (config.ruleId == bytes32(0)) revert IncomingFundsGuardAccount.ZeroRuleId();
         if (config.protectBps == 0 || config.protectBps > GuardTypes.BPS_DENOMINATOR) {
             revert IncomingFundsGuardAccount.InvalidProtectBps(config.protectBps);
+        }
+        if (config.threshold < (GuardTypes.BPS_DENOMINATOR + config.protectBps - 1) / config.protectBps) {
+            revert IncomingFundsGuardAccount.ThresholdProducesZeroProtection(config.threshold, config.protectBps);
         }
         if (
             config.releaseDuration < GuardTypes.MIN_RELEASE_DURATION

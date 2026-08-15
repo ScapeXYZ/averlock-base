@@ -48,10 +48,51 @@ contract IncomingFundsGuardTest is Test {
     uint256 internal constant THRESHOLD = 500e6;
 
     function setUp() public {
-        factory = new IncomingFundsGuardFactory();
         vault = new BaseProtectionVault();
         token = new TestERC20();
+        factory = new IncomingFundsGuardFactory(address(token), address(vault));
         guard = IncomingFundsGuardAccount(_deployGuard(_config(address(token), address(vault), RULE_ID)));
+    }
+
+    function testFactoryWiringIsImmutableAndEnforced() public {
+        assertEq(factory.asset(), address(token));
+        assertEq(factory.protectionVault(), address(vault));
+
+        TestERC20 otherToken = new TestERC20();
+        GuardTypes.IncomingGuardConfig memory wrongAsset =
+            _config(address(otherToken), address(vault), keccak256("wrong-asset"));
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(IncomingFundsGuardFactory.InvalidAsset.selector, address(otherToken), address(token))
+        );
+        factory.createIncomingGuard(wrongAsset);
+
+        BaseProtectionVault otherVault = new BaseProtectionVault();
+        GuardTypes.IncomingGuardConfig memory wrongVault =
+            _config(address(token), address(otherVault), keccak256("wrong-vault"));
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(IncomingFundsGuardFactory.InvalidVault.selector, address(otherVault), address(vault))
+        );
+        factory.createIncomingGuard(wrongVault);
+    }
+
+    function testRejectsZeroRuleId() public {
+        vm.prank(owner);
+        vm.expectRevert(IncomingFundsGuardAccount.ZeroRuleId.selector);
+        factory.createIncomingGuard(_config(address(token), address(vault), bytes32(0)));
+    }
+
+    function testRejectsFactoryDependenciesWithoutCode() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(IncomingFundsGuardAccount.AddressHasNoCode.selector, makeAddr("no-code-token"))
+        );
+        new IncomingFundsGuardFactory(makeAddr("no-code-token"), address(vault));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IncomingFundsGuardAccount.AddressHasNoCode.selector, makeAddr("no-code-vault"))
+        );
+        new IncomingFundsGuardFactory(address(token), makeAddr("no-code-vault"));
     }
 
     function testDeterministicAddressAndDiscovery() public {
@@ -125,18 +166,22 @@ contract IncomingFundsGuardTest is Test {
     }
 
     function testVerySmallProtectBpsAndRoundingDown() public {
-        IncomingFundsGuardAccount tinyGuard = _createGuard(1, keccak256("tiny"), 1);
+        IncomingFundsGuardAccount tinyGuard = _createGuard(1, keccak256("tiny"), 10_000);
         token.mint(address(tinyGuard), 19_999);
         tinyGuard.process();
         assertEq(vault.getPosition(1).totalDeposited, 1);
         assertEq(token.balanceOf(owner), 19_998);
     }
 
-    function testRejectsRoundedZeroProtectedAmount() public {
-        IncomingFundsGuardAccount tinyGuard = _createGuard(1, keccak256("zero-round"), 1);
-        token.mint(address(tinyGuard), 9_999);
-        vm.expectRevert(IncomingFundsGuardAccount.ProtectedAmountIsZero.selector);
-        tinyGuard.process();
+    function testRejectsThresholdThatRoundsProtectionToZero() public {
+        GuardTypes.IncomingGuardConfig memory config = _config(address(token), address(vault), keccak256("zero-round"));
+        config.threshold = 9_999;
+        config.protectBps = 1;
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(IncomingFundsGuardAccount.ThresholdProducesZeroProtection.selector, 9_999, 1)
+        );
+        factory.createIncomingGuard(config);
     }
 
     function testMultipleDepositsAccumulateAndMultipleCycles() public {
@@ -187,8 +232,9 @@ contract IncomingFundsGuardTest is Test {
 
     function testVaultFailureRollsBackEntireSplit() public {
         RevertingVault badVault = new RevertingVault();
-        IncomingFundsGuardAccount badGuard =
-            IncomingFundsGuardAccount(_deployGuard(_config(address(token), address(badVault), keccak256("bad-vault"))));
+        IncomingFundsGuardAccount badGuard = IncomingFundsGuardAccount(
+            _deployIsolatedGuard(_config(address(token), address(badVault), keccak256("bad-vault")))
+        );
         token.mint(address(badGuard), THRESHOLD);
 
         vm.expectRevert("VAULT_FAILURE");
@@ -202,7 +248,7 @@ contract IncomingFundsGuardTest is Test {
     function testReentrantVaultCannotProcessTwice() public {
         ReentrantVault reentrantVault = new ReentrantVault(token);
         IncomingFundsGuardAccount reentrantGuard = IncomingFundsGuardAccount(
-            _deployGuard(_config(address(token), address(reentrantVault), keccak256("reentrant")))
+            _deployIsolatedGuard(_config(address(token), address(reentrantVault), keccak256("reentrant")))
         );
         reentrantVault.setGuard(reentrantGuard);
         token.mint(address(reentrantGuard), THRESHOLD);
@@ -214,8 +260,9 @@ contract IncomingFundsGuardTest is Test {
 
     function testRejectsFeeOnTransferTokenAtomically() public {
         FeeOnTransferTestERC20 feeToken = new FeeOnTransferTestERC20();
-        IncomingFundsGuardAccount feeGuard =
-            IncomingFundsGuardAccount(_deployGuard(_config(address(feeToken), address(vault), keccak256("fee"))));
+        IncomingFundsGuardAccount feeGuard = IncomingFundsGuardAccount(
+            _deployIsolatedGuard(_config(address(feeToken), address(vault), keccak256("fee")))
+        );
         feeToken.mint(address(feeGuard), THRESHOLD);
         vm.expectRevert(
             abi.encodeWithSelector(IncomingFundsGuardAccount.UnexpectedOwnerReceipt.selector, 150e6, 148_500_000)
@@ -228,7 +275,8 @@ contract IncomingFundsGuardTest is Test {
     function testFuzzSplitConservesProcessedAmount(uint96 amount, uint16 bps) public {
         amount = uint96(bound(amount, 10_000, type(uint96).max));
         bps = uint16(bound(bps, 1, 10_000));
-        IncomingFundsGuardAccount fuzzGuard = _createGuard(bps, keccak256(abi.encode(amount, bps)), 1);
+        uint256 minimumThreshold = (10_000 + bps - 1) / bps;
+        IncomingFundsGuardAccount fuzzGuard = _createGuard(bps, keccak256(abi.encode(amount, bps)), minimumThreshold);
         token.mint(address(fuzzGuard), amount);
         uint256 positionId = fuzzGuard.process();
         uint256 protectedAmount = vault.getPosition(positionId).totalDeposited;
@@ -241,14 +289,16 @@ contract IncomingFundsGuardTest is Test {
 
     function testFuzzInvalidParameters(uint256 threshold_, uint16 bps, uint64 duration) public {
         GuardTypes.IncomingGuardConfig memory config = _config(address(token), address(vault), keccak256("invalid"));
-        threshold_ = bound(threshold_, 0, 1);
+        threshold_ = bound(threshold_, 0, 20_000);
         bps = uint16(bound(bps, 0, 10_001));
         duration = uint64(bound(duration, 0, 366 days));
         config.threshold = threshold_;
         config.protectBps = bps;
         config.releaseDuration = duration;
 
-        bool valid = threshold_ > 0 && bps > 0 && bps <= 10_000 && duration >= 1 hours && duration <= 365 days;
+        bool validBps = bps > 0 && bps <= 10_000;
+        bool nonZeroProtected = validBps && threshold_ >= (10_000 + bps - 1) / bps;
+        bool valid = threshold_ > 0 && nonZeroProtected && duration >= 1 hours && duration <= 365 days;
         if (!valid) vm.expectRevert();
         address deployed = _deployGuard(config);
         if (valid) assertTrue(deployed != address(0));
@@ -264,6 +314,12 @@ contract IncomingFundsGuardTest is Test {
     function _deployGuard(GuardTypes.IncomingGuardConfig memory config) internal returns (address guard_) {
         vm.prank(config.owner);
         return factory.createIncomingGuard(config);
+    }
+
+    function _deployIsolatedGuard(GuardTypes.IncomingGuardConfig memory config) internal returns (address guard_) {
+        IncomingFundsGuardFactory isolatedFactory = new IncomingFundsGuardFactory(config.asset, config.vault);
+        vm.prank(config.owner);
+        return isolatedFactory.createIncomingGuard(config);
     }
 
     function _config(address asset_, address vault_, bytes32 ruleId)

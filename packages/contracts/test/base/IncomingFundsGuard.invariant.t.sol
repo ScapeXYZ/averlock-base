@@ -47,6 +47,7 @@ contract IncomingFundsGuardInvariantTest is StdInvariant, Test {
 
     function invariantProcessedNeverExceedsReceived() public view {
         assertLe(guard.totalProcessed(), handler.totalReceived());
+        assertEq(guard.totalProcessed() + token.balanceOf(address(guard)), handler.totalReceived());
     }
 
     function invariantPrincipalAccountingAndRecipients() public view {
@@ -57,6 +58,8 @@ contract IncomingFundsGuardInvariantTest is StdInvariant, Test {
 
     function invariantEveryPositionBelongsToOwner() public view {
         uint256 count = vault.positionCount();
+        assertEq(count, guard.processingCount());
+        assertEq(token.allowance(address(guard), address(vault)), 0);
         for (uint256 id = 1; id <= count; ++id) {
             BaseProtectionVault.Position memory position = vault.getPosition(id);
             assertEq(position.beneficiary, owner);
