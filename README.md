@@ -1,8 +1,8 @@
 # AVERLOCK Base
 
-This clean repository targets **Base Sepolia** as its staging network. It uses public,
-transparent protection guards backed by USDC and an immutable linear-release vault. ETH is the
-network gas token.
+The frontend supports **Base Sepolia** for staging and **Base Mainnet** for production through
+typed deployment manifests. Base Mainnet reads use official USDC, but AVERLOCK contract reads
+and all writes remain unavailable until verified Mainnet deployment values are added.
 
 - Chain ID: `84532`
 - RPC: `https://sepolia.base.org`
@@ -10,6 +10,14 @@ network gas token.
 - BaseProtectionVault: `0x5f7a95160A34e84B91e25903b69B8B378094a9B0`
 - Approved Base Sepolia USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
 - Indexer start block: `45438094`
+
+Production selects Base Mainnet (chain ID `8453`) and official Base USDC
+`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`. It intentionally defines no GuardManager,
+ProtectionVault, factory, incoming guard, or deployment block.
+
+Set `NEXT_PUBLIC_AVERLOCK_ENV=staging|production`; an unset value defaults to staging. RPCs can
+be overridden with `NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL` and `NEXT_PUBLIC_BASE_MAINNET_RPC_URL`.
+Deployment addresses are sourced only from `config/deployments` and are not environment overrides.
 
 Contract reads are authoritative for current state. The optional AVERLOCK event indexer handles
 only owner discovery and activity/history. It never substitutes indexed or fabricated data for

@@ -3,6 +3,7 @@ import {
   baseContracts,
   basePublicClient,
   deploymentConfigured,
+  activeChain,
 } from "./config";
 import { baseErc20Abi, baseGuardManagerAbi, baseVaultAbi } from "./contracts";
 export const guardStates = [
@@ -84,7 +85,7 @@ export async function discoverGuards(owner: Address) {
     return {
       anchors: local,
       warning:
-        "Guard discovery indexer is unreachable. Known guard IDs are still verified from Base Sepolia contracts.",
+        `Guard discovery indexer is unreachable. Known guard IDs are still verified from ${activeChain.name} contracts.`,
     };
   }
   if (!response.ok)
@@ -134,7 +135,7 @@ export async function discoverActivity(owner: Address) {
 }
 export async function readGuard(id: bigint) {
   if (!deploymentConfigured)
-    throw new Error("Base Sepolia contracts are not configured.");
+    throw new Error(`AVERLOCK contracts are unavailable on ${activeChain.name}.`);
   const [guard, state] = await Promise.all([
     basePublicClient.readContract({
       address: baseContracts.guardManager,
@@ -166,7 +167,7 @@ export async function readWallet(owner: Address) {
     )
   ).filter(({ guard }) => getAddress(guard.owner) === getAddress(owner));
   if (!deploymentConfigured)
-    throw new Error("Base Sepolia contracts are not configured.");
+    throw new Error(`AVERLOCK contracts are unavailable on ${activeChain.name}.`);
   const [symbol, decimals] = await Promise.all([
     basePublicClient.readContract({
       address: baseContracts.approvedToken,

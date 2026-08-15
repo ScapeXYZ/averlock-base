@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Icon } from "@/components/dashboard/icons";
+import { activeChain, deploymentEnvironment, writesEnabled } from "@/lib/base/config";
 export function BaseLanding() {
   return (
     <main className="base-landing">
@@ -10,7 +11,7 @@ export function BaseLanding() {
           </span>
           <span>AVERLOCK</span>
         </Link>
-        <span className="base-chip">Base Sepolia</span>
+        <span className="base-chip">{activeChain.name}</span>
       </nav>
       <section className="landing-hero">
         <div>
@@ -41,10 +42,10 @@ export function BaseLanding() {
         <aside className="canva-slot" aria-label="AVERLOCK contract flow">
           <span>Public on-chain protection</span>
           <strong>Guard → Vault</strong>
-          <p>USDC protection on Base Sepolia. ETH is used only for gas.</p>
+          <p>USDC protection on {activeChain.name}. ETH is used only for gas.</p>
           <div>
-            <b>84532</b>
-            <small>Base Sepolia</small>
+            <b>{activeChain.id}</b>
+            <small>{activeChain.name}</small>
           </div>
         </aside>
       </section>
@@ -93,8 +94,9 @@ export function BaseLanding() {
       <footer>
         <span>AVERLOCK</span>
         <p>
-          Currently configured for Base Sepolia. Mainnet execution is not
-          enabled.
+          {deploymentEnvironment === "production" && !writesEnabled
+            ? "Base Mainnet deployment is unavailable. Execution is disabled."
+            : `Currently configured for ${activeChain.name}.`}
         </p>
       </footer>
     </main>

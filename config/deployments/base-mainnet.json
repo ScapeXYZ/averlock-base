@@ -1,0 +1,8 @@
+{
+  "environment": "production",
+  "chainId": 8453,
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "contracts": {},
+  "deploymentBlock": null,
+  "writesEnabled": false
+}

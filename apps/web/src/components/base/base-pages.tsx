@@ -20,8 +20,11 @@ import { TopNav } from "@/components/dashboard/top-nav";
 import {
   baseContracts,
   basePublicClient,
-  baseSepolia,
+  activeChain,
+  activeDeployment,
   deploymentConfigured,
+  deploymentEnvironment,
+  writesEnabled,
 } from "@/lib/base/config";
 import {
   baseErc20Abi,
@@ -94,7 +97,7 @@ function useWalletData() {
   const [data, setData] = useState<Awaited<ReturnType<typeof readWallet>>>();
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {
-    if (!address || chainId !== baseSepolia.id) return;
+    if (!address || chainId !== activeChain.id) return;
     setError("");
     setData(undefined);
     try {
@@ -120,22 +123,22 @@ export function DashboardPage() {
         <main className="base-page">
           <State
             title="Connect your wallet"
-            body="Connect a wallet to read your AVERLOCK state directly from Base Sepolia."
+            body={`Connect a wallet to read your AVERLOCK state directly from ${activeChain.name}.`}
           />
         </main>
       </Shell>
     );
-  if (chainId !== baseSepolia.id)
+  if (chainId !== activeChain.id)
     return (
       <Shell>
         <main className="base-page">
           <State
-            title="Base Sepolia required"
+            title={`${activeChain.name} required`}
             body="AVERLOCK will not read or submit against an unsupported network."
             action={
               <button
                 className="primary-button"
-                onClick={() => switchChain({ chainId: baseSepolia.id })}
+                onClick={() => switchChain({ chainId: activeChain.id })}
               >
                 Switch network
               </button>
@@ -173,7 +176,7 @@ export function DashboardPage() {
       <main className="base-page">
         <section className="base-dashboard-hero">
           <div>
-            <span className="base-chip">Base Sepolia</span>
+            <span className="base-chip">{activeChain.name}</span>
             <h1>Protection you can verify.</h1>
             <p>
               Transparent rules and non-cancelable vaults enforce the plan you
@@ -258,13 +261,13 @@ export function GuardsPage() {
         </main>
       </Shell>
     );
-  if (chainId !== baseSepolia.id)
+  if (chainId !== activeChain.id)
     return (
       <Shell>
         <main className="base-page">
           <State
             title="Unsupported network"
-            body="Switch to Base Sepolia to view guards."
+            body={`Switch to ${activeChain.name} to view guards.`}
           />
         </main>
       </Shell>
@@ -282,7 +285,7 @@ export function GuardsPage() {
         ) : !data ? (
           <State
             title="Reading guards"
-            body="Verifying current guard state on Base Sepolia."
+            body={`Verifying current guard state on ${activeChain.name}.`}
           />
         ) : (
           <>
@@ -358,7 +361,7 @@ export function GuardDetailPage({ guardId }: { guardId: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const { writeContractAsync } = useWriteContract();
-  const client = usePublicClient({ chainId: baseSepolia.id });
+  const client = usePublicClient({ chainId: activeChain.id });
   const load = useCallback(async () => {
     try {
       const g = await readGuard(BigInt(guardId));
@@ -384,6 +387,10 @@ export function GuardDetailPage({ guardId }: { guardId: string }) {
     void Promise.resolve().then(load);
   }, [load]);
   async function act(kind: "fund" | "execute" | "deactivate" | "complete") {
+    if (!writesEnabled) {
+      setError("Writes are disabled for this deployment environment.");
+      return;
+    }
     if (!guard || !address || !client) return;
     setBusy(kind);
     setError("");
@@ -444,12 +451,12 @@ export function GuardDetailPage({ guardId }: { guardId: string }) {
       setBusy("");
     }
   }
-  if (chainId !== baseSepolia.id)
+  if (chainId !== activeChain.id)
     return (
       <Shell>
         <main className="base-page">
           <State
-            title="Base Sepolia required"
+            title={`${activeChain.name} required`}
             body="Switch networks to inspect this guard."
           />
         </main>
@@ -556,10 +563,14 @@ export function GuardDetailPage({ guardId }: { guardId: string }) {
 export function VaultsPage() {
   const { address, chainId, data, error, refresh } = useWalletData();
   const { writeContractAsync } = useWriteContract();
-  const client = usePublicClient({ chainId: baseSepolia.id });
+  const client = usePublicClient({ chainId: activeChain.id });
   const [busy, setBusy] = useState<bigint>();
   const [actionError, setActionError] = useState("");
   async function claim(id: bigint) {
+    if (!writesEnabled) {
+      setActionError("Writes are disabled for this deployment environment.");
+      return;
+    }
     if (!address || !client) return;
     setBusy(id);
     setActionError("");
@@ -587,7 +598,7 @@ export function VaultsPage() {
         <Header
           eyebrow="Protection Vaults"
           title="Committed funds"
-          body="Vault balances and claimable amounts are read directly from Base Sepolia."
+          body={`Vault balances and claimable amounts are read directly from ${activeChain.name}.`}
         />
         {actionError && <p className="base-error">{actionError}</p>}
         {!address ? (
@@ -595,9 +606,9 @@ export function VaultsPage() {
             title="Connect your wallet"
             body="Connect the beneficiary wallet."
           />
-        ) : chainId !== baseSepolia.id ? (
+        ) : chainId !== activeChain.id ? (
           <State
-            title="Base Sepolia required"
+            title={`${activeChain.name} required`}
             body="Vault actions are disabled on other networks."
           />
         ) : error ? (
@@ -662,7 +673,7 @@ export function ActivityPage() {
   const [warning, setWarning] = useState("");
   const [loadedFor, setLoadedFor] = useState("");
   useEffect(() => {
-    if (address && chainId === baseSepolia.id) {
+    if (address && chainId === activeChain.id) {
       discoverActivity(address)
         .then((x) => {
           setItems(x.items);
@@ -705,7 +716,7 @@ export function ActivityPage() {
             {items.map((x) => (
               <a
                 key={`${x.transaction_hash}-${x.event_name}`}
-                href={`${baseSepolia.blockExplorers.default.url}/tx/${x.transaction_hash}`}
+                href={`${activeChain.blockExplorers.default.url}/tx/${x.transaction_hash}`}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -742,7 +753,7 @@ export function SettingsPage() {
         : Promise.reject(new Error()),
     ])
       .then(([id, v]) => {
-        setRpc(id === baseSepolia.id ? "Available" : "Wrong chain");
+        setRpc(id === activeChain.id ? "Available" : "Wrong chain");
         setVersion(String(v));
       })
       .catch(() => setRpc("Unavailable"));
@@ -761,7 +772,8 @@ export function SettingsPage() {
             label="Connected chain"
             value={chainId ? `${chainId}` : "Not connected"}
           />
-          <Row label="Product network" value="Base Sepolia · 84532" />
+          <Row label="Environment" value={deploymentEnvironment} />
+          <Row label="Product network" value={`${activeChain.name} · ${activeChain.id}`} />
           <Row label="Gas token" value="ETH" />
           <Row label="Supported protection asset" value="USDC · 6 decimals" />
           <Row
@@ -771,18 +783,18 @@ export function SettingsPage() {
           <Row label="Contract version" value={version} />
           <Row
             label="GuardManager"
-            value={baseContracts.guardManager}
-            link={`${baseSepolia.blockExplorers.default.url}/address/${baseContracts.guardManager}`}
+            value={activeDeployment.contracts.guardManager || "Not deployed"}
+            link={activeDeployment.contracts.guardManager && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.guardManager}`}
           />
           <Row
             label="ProtectionVault"
-            value={baseContracts.protectionVault}
-            link={`${baseSepolia.blockExplorers.default.url}/address/${baseContracts.protectionVault}`}
+            value={activeDeployment.contracts.protectionVault || "Not deployed"}
+            link={activeDeployment.contracts.protectionVault && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.protectionVault}`}
           />
           <Row
             label="Approved token"
             value={baseContracts.approvedToken}
-            link={`${baseSepolia.blockExplorers.default.url}/address/${baseContracts.approvedToken}`}
+            link={`${activeChain.blockExplorers.default.url}/address/${baseContracts.approvedToken}`}
           />
         </section>
       </main>
@@ -817,7 +829,7 @@ export function CreateGuardPage() {
   const router = useRouter();
   const { address, chainId, isConnected } = useAccount();
   const { switchChain } = useSwitchChain();
-  const client = usePublicClient({ chainId: baseSepolia.id });
+  const client = usePublicClient({ chainId: activeChain.id });
   const { writeContractAsync } = useWriteContract();
   const [form, setForm] = useState({
     type: "0",
@@ -871,7 +883,7 @@ export function CreateGuardPage() {
         )
         .catch(() =>
           setError(
-            "USDC metadata or approved-asset status is unavailable from Base Sepolia.",
+            `USDC metadata or approved-asset status is unavailable from ${activeChain.name}.`,
           ),
         );
   }, [address]);
@@ -883,6 +895,10 @@ export function CreateGuardPage() {
     }
   })();
   async function submit() {
+    if (!writesEnabled) {
+      setError("Writes are disabled for this deployment environment.");
+      return;
+    }
     if (!address || !client || amount <= 0n) return;
     setError("");
     setStatus("Simulating guard creation…");
@@ -905,7 +921,7 @@ export function CreateGuardPage() {
       });
       setStatus("Confirm guard creation in your wallet…");
       const hash = await writeContractAsync(simulation.request);
-      setStatus("Waiting for Base Sepolia confirmation…");
+      setStatus(`Waiting for ${activeChain.name} confirmation…`);
       const receipt = await client.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success")
         throw new Error("Guard creation reverted.");
@@ -954,21 +970,21 @@ export function CreateGuardPage() {
         {!deploymentConfigured ? (
           <State
             title="Deployment not configured"
-            body="Base Sepolia contract addresses must be configured before a real guard can be created."
+            body={`${activeChain.name} contract addresses are unavailable. Writes are disabled.`}
           />
         ) : !isConnected ? (
           <State
             title="Connect your wallet"
             body="A connected owner is required to register a guard."
           />
-        ) : chainId !== baseSepolia.id ? (
+        ) : chainId !== activeChain.id ? (
           <State
-            title="Base Sepolia required"
+            title={`${activeChain.name} required`}
             body="Guard creation is disabled on other networks."
             action={
               <button
                 className="primary-button"
-                onClick={() => switchChain({ chainId: baseSepolia.id })}
+                onClick={() => switchChain({ chainId: activeChain.id })}
               >
                 Switch network
               </button>
