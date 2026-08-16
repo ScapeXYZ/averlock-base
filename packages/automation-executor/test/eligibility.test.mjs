@@ -1,0 +1,10 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { assessEligibility } from "../src/eligibility.mjs";
+const usdc = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+const input = (balance) => ({ chainId: 84532, expectedChainId: 84532, asset: usdc, expectedAsset: usdc, balance, threshold: 100n });
+test("below threshold is not eligible", () => assert.equal(assessEligibility(input(99n)).reason, "below_threshold"));
+test("exactly at threshold is eligible", () => assert.equal(assessEligibility(input(100n)).eligible, true));
+test("above threshold is eligible", () => assert.equal(assessEligibility(input(101n)).eligible, true));
+test("wrong chain is rejected", () => assert.equal(assessEligibility({ ...input(100n), chainId: 8453 }).reason, "wrong_chain"));
+test("wrong token is rejected", () => assert.equal(assessEligibility({ ...input(100n), asset: "0x0000000000000000000000000000000000000001" }).reason, "wrong_token"));

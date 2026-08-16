@@ -194,11 +194,16 @@ function syncStatus() {
 }
 const rowsForOwner = db.prepare("SELECT * FROM events WHERE chain_id = ? AND owner = ? ORDER BY CAST(block_number AS INTEGER) DESC, log_index DESC LIMIT 500");
 const guardsForOwner = db.prepare("SELECT * FROM events WHERE chain_id = ? AND owner = ? AND event_name = 'GuardCreated' ORDER BY CAST(block_number AS INTEGER) DESC LIMIT 100");
+const incomingGuards = db.prepare("SELECT * FROM events WHERE chain_id = ? AND event_name = 'IncomingGuardCreated' AND contract_address = ? AND CAST(block_number AS INTEGER) >= CAST(? AS INTEGER) ORDER BY CAST(block_number AS INTEGER) ASC, log_index ASC LIMIT 5000");
 const server = http.createServer((request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
   if (request.method !== "GET") return json(response, 405, { error: "Method not allowed" });
   if (url.pathname === "/health") return json(response, lastError || configurationError ? 503 : 200, { ...syncStatus(), service: "averlock-base-sepolia-event-indexer" });
   if (url.pathname === "/sync") return json(response, 200, syncStatus());
+  if (url.pathname === "/incoming-guards") {
+    if (!v2) return json(response, 503, { error: "V2 indexer configuration is unavailable" });
+    return json(response, 200, { chainId: config.chainId, factory: v2.factory, startBlock: v2.startBlock.toString(), items: incomingGuards.all(config.chainId, v2.factory, v2.startBlock.toString()).map((row) => ({ ...row, payload: JSON.parse(row.payload) })), sync: syncStatus() });
+  }
   const owner = url.searchParams.get("owner")?.toLowerCase();
   if ((url.pathname === "/activity" || url.pathname === "/guards") && !/^0x[0-9a-f]{40}$/.test(owner || "")) return json(response, 400, { error: "A valid owner address is required" });
   if (url.pathname === "/activity") return json(response, 200, { chainId: config.chainId, items: rowsForOwner.all(config.chainId, owner).map((row) => ({ ...row, payload: JSON.parse(row.payload) })), sync: syncStatus() });
