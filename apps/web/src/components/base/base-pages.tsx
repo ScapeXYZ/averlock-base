@@ -47,7 +47,8 @@ import { compactAddress, formatBlockTimestamp } from "@/lib/base/format";
 import { groupActivity } from "@/lib/base/activity";
 import { AccountingCards } from "@/components/base/accounting/accounting-cards";
 import { ProtectionGraph } from "@/components/base/graph/protection-graph";
-import { humanizeError } from "@/components/base/status/error-message";
+import { ErrorMessage, humanizeError } from "@/components/base/status/error-message";
+import { settingsBalancePresentation, useWalletBalances } from "@/lib/base/wallet-balances";
 import { canClaim, cooldownState, releaseProgress } from "@/lib/base/ui-state";
 import {
   IncomingGuardCreatePage,
@@ -77,7 +78,7 @@ function State({
   action,
 }: {
   title: string;
-  body: string;
+  body: React.ReactNode;
   action?: React.ReactNode;
 }) {
   return (
@@ -86,7 +87,7 @@ function State({
         <Icon name="shield" />
       </span>
       <h2>{title}</h2>
-      <p>{body}</p>
+      <div className="base-state-body">{body}</div>
       {action}
     </div>
   );
@@ -116,17 +117,15 @@ const duration = (seconds: bigint) =>
 function useWalletData() {
   const { address, chainId, isConnected } = useAccount();
   const [data, setData] = useState<Awaited<ReturnType<typeof readWallet>>>();
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown>();
   const refresh = useCallback(async () => {
     if (!address || chainId !== activeChain.id) return;
-    setError("");
+    setError(undefined);
     setData(undefined);
     try {
       setData(await readWallet(address));
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Base contract reads are unavailable.",
-      );
+      setError(e);
     }
   }, [address, chainId]);
   useEffect(() => {
@@ -172,7 +171,7 @@ export function DashboardPage() {
     return (
       <Shell>
         <main className="base-page">
-          <State title="Current state unavailable" body={error} />
+          <State title="Current state unavailable" body={<ErrorMessage error={error} fallback="Unable to load protection data right now." />} />
         </main>
       </Shell>
     );
@@ -289,7 +288,7 @@ export function GuardsPage() {
           body="Discovery comes from AVERLOCK events; every status shown here is re-read from the contract."
         />
         {error ? (
-          <State title="Guards unavailable" body={error} />
+          <State title="Guards unavailable" body={<ErrorMessage error={error} fallback="Unable to load protection data right now." />} />
         ) : !data ? (
           <State
             title="Reading guards"
@@ -651,7 +650,7 @@ export function VaultsPage() {
             body="Vault actions are disabled on other networks."
           />
         ) : error ? (
-          <State title="Vaults unavailable" body={error} />
+          <State title="Vaults unavailable" body={<ErrorMessage error={error} fallback="Unable to load protection data right now." />} />
         ) : !data ? (
           <State
             title="Reading vaults"
@@ -759,7 +758,9 @@ export function ActivityPage() {
 }
 
 export function SettingsPage() {
-  const { address, chainId, data } = useWalletData();
+  const { address, chainId } = useAccount();
+  const balances = useWalletBalances();
+  const displayedBalances = settingsBalancePresentation(balances.eth, balances.usdc);
   const [version, setVersion] = useState("Unavailable");
   const [rpc, setRpc] = useState("Checking…");
   useEffect(() => {
@@ -789,8 +790,8 @@ export function SettingsPage() {
         />
         <section className="base-panel"><div className="section-heading"><div><p className="eyebrow">Wallet & Network</p><h2>Connected account</h2></div></div><div className="settings-list">
           <Row label="Connected wallet" value={address || "Not connected"} />
-          <Row label="ETH balance" value={data ? `${Number(formatUnits(data.ethBalance, 18)).toFixed(5)} ETH` : "—"} />
-          <Row label="USDC balance" value={data ? `${formatUnits(data.usdcBalance, data.decimals)} ${data.symbol}` : "—"} />
+          <Row label="ETH balance" value={displayedBalances.eth} />
+          <Row label="USDC balance" value={displayedBalances.usdc} />
           <Row label="Selected network" value={chainId ? `${activeChain.name} · ${chainId}` : "Not connected"} />
         </div></section>
         <section className="base-panel"><div className="section-heading"><div><p className="eyebrow">Protection Preferences</p><h2>Interface behavior</h2></div></div><p className="muted-copy">AVERLOCK currently follows your connected wallet and system accessibility preferences. No unsupported preference is simulated or stored.</p></section>

@@ -52,6 +52,7 @@ export type GuardAnchor = {
   owner: Address;
 };
 export type ActivityAnchor = { transaction_hash: Hex; log_index?: number; block_number: string; block_timestamp?: string; event_name: string; status?: string; contract_address?: string; payload: Record<string, string | number | boolean> };
+export const RPC_LOG_BLOCK_RANGE = 9_999n;
 export type VaultVersion = "manual" | "v2";
 export type WalletPosition = {
   version: VaultVersion;
@@ -157,6 +158,53 @@ export async function discoverActivity(owner: Address) {
   };
 }
 
+async function indexedActivity(owner: Address): Promise<ActivityAnchor[] | undefined> {
+  const base = process.env.NEXT_PUBLIC_AVERLOCK_INDEXER_URL;
+  if (!base) return undefined;
+  try {
+    const response = await fetch(`${base.replace(/\/$/, "")}/activity?owner=${owner}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) return undefined;
+    const body = await response.json() as { chainId?: number; items?: ActivityAnchor[] };
+    return isExpectedChain(body.chainId, activeChain.id) && Array.isArray(body.items) ? body.items : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+type LogClient = {
+  getBlockNumber(): Promise<bigint>;
+  getLogs(args: Record<string, unknown>): Promise<readonly unknown[]>;
+};
+type V2RpcLog = { args: { positionId?: bigint }; transactionHash: Hex; blockNumber: bigint };
+
+export async function getLogsInChunks<T>(client: LogClient, args: Record<string, unknown>, fromBlock: bigint, toBlock?: bigint): Promise<T[]> {
+  const lastBlock = toBlock ?? await client.getBlockNumber();
+  const logs: T[] = [];
+  for (let start = fromBlock; start <= lastBlock; start += RPC_LOG_BLOCK_RANGE + 1n) {
+    const end = start + RPC_LOG_BLOCK_RANGE < lastBlock ? start + RPC_LOG_BLOCK_RANGE : lastBlock;
+    logs.push(...await client.getLogs({ ...args, fromBlock: start, toBlock: end }) as T[]);
+  }
+  return logs;
+}
+
+export function v2PositionAnchorsFromActivity(items: ActivityAnchor[], owner: Address) {
+  const expectedOwner = owner.toLowerCase();
+  const sourceByPosition = new Map<string, Address>();
+  for (const item of items) {
+    const payloadOwner = String(item.payload.owner || item.payload.beneficiary || "").toLowerCase();
+    if (payloadOwner && payloadOwner !== expectedOwner) continue;
+    if (item.event_name === "IncomingFundsProcessed" && item.payload.positionId && item.contract_address) {
+      sourceByPosition.set(String(item.payload.positionId), getAddress(item.contract_address));
+    }
+  }
+  return items.filter((item) => item.event_name === "PositionCreated" && String(item.payload.beneficiary || "").toLowerCase() === expectedOwner && item.payload.positionId)
+    .map((item) => ({ positionId: BigInt(String(item.payload.positionId)), sourceGuard: sourceByPosition.get(String(item.payload.positionId)), transactionHash: item.transaction_hash, blockNumber: BigInt(item.block_number) }));
+}
+
+export async function preferIndexedV2Anchors(items: ActivityAnchor[] | undefined, owner: Address, rpcFallback: () => Promise<ReturnType<typeof v2PositionAnchorsFromActivity>>) {
+  return items ? v2PositionAnchorsFromActivity(items, owner) : rpcFallback();
+}
+
 export function orderActivity(items: ActivityAnchor[]) {
   return [...items].sort((a, b) => Number(BigInt(b.block_number) - BigInt(a.block_number)) || (b.log_index || 0) - (a.log_index || 0));
 }
@@ -203,20 +251,19 @@ export async function discoverIncomingGuards(owner: Address): Promise<readonly A
 
 export async function discoverV2Positions(owner: Address, knownGuards?: readonly Address[]): Promise<WalletPosition[]> {
   if (!hasV2Contracts(activeDeployment) || activeDeployment.startBlocks.v2 == null) return [];
-  const guards = knownGuards || await discoverIncomingGuards(owner);
-  const sourceByPosition = new Map<string, Address>();
-  await Promise.all(guards.map(async (guard) => {
-    const logs = await basePublicClient.getLogs({ address: guard, event: incomingFundsProcessedEvent, args: { owner }, fromBlock: BigInt(activeDeployment.startBlocks.v2!), toBlock: "latest" });
-    for (const log of logs) sourceByPosition.set(log.args.positionId!.toString(), guard);
-  }));
-  const created = await basePublicClient.getLogs({
-    address: baseV2Contracts.protectionVault,
-    event: positionCreatedEvent,
-    args: { beneficiary: owner },
-    fromBlock: BigInt(activeDeployment.startBlocks.v2),
-    toBlock: "latest",
+  const startBlock = BigInt(activeDeployment.startBlocks.v2);
+  const indexed = await indexedActivity(owner);
+  const anchors = await preferIndexedV2Anchors(indexed, owner, async () => {
+    const guards = knownGuards || await discoverIncomingGuards(owner);
+    const sourceByPosition = new Map<string, Address>();
+    await Promise.all(guards.map(async (guard) => {
+      const logs = await getLogsInChunks<V2RpcLog>(basePublicClient, { address: guard, event: incomingFundsProcessedEvent, args: { owner } }, startBlock);
+      for (const log of logs) if (log.args.positionId) sourceByPosition.set(log.args.positionId.toString(), guard);
+    }));
+    const created = await getLogsInChunks<V2RpcLog>(basePublicClient, { address: baseV2Contracts.protectionVault, event: positionCreatedEvent, args: { beneficiary: owner } }, startBlock);
+    return created.flatMap((log) => log.args.positionId !== undefined ? [{ positionId: log.args.positionId, sourceGuard: sourceByPosition.get(log.args.positionId.toString()), transactionHash: log.transactionHash, blockNumber: log.blockNumber }] : []);
   });
-  const positions = await Promise.all(created.map((log) => readPosition(baseV2Contracts.protectionVault, log.args.positionId!, "v2", sourceByPosition.get(log.args.positionId!.toString()), undefined, log.transactionHash, log.blockNumber)));
+  const positions = await Promise.all(anchors.map((anchor) => readPosition(baseV2Contracts.protectionVault, anchor.positionId, "v2", anchor.sourceGuard, undefined, anchor.transactionHash, anchor.blockNumber)));
   return positions.filter((position): position is WalletPosition => Boolean(position && getAddress(position.position.beneficiary) === getAddress(owner)));
 }
 export async function readGuard(id: bigint) {

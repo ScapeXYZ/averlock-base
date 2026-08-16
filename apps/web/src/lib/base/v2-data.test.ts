@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Address } from "viem";
-import { aggregatePositions, isExpectedChain, orderActivity, summarizeVaultAccounting, type WalletPosition } from "./data";
+import { aggregatePositions, getLogsInChunks, isExpectedChain, orderActivity, preferIndexedV2Anchors, RPC_LOG_BLOCK_RANGE, summarizeVaultAccounting, type ActivityAnchor, type WalletPosition } from "./data";
 import { formatBlockTimestamp } from "./format";
 
 const owner = "0x1111111111111111111111111111111111111111" as Address;
@@ -22,6 +22,23 @@ function position(version: "manual" | "v2", id: bigint, deposited: bigint, claim
 }
 
 describe("V2 vault data", () => {
+  it("keeps every direct log request within the RPC block limit", async () => {
+    const calls: { fromBlock: bigint; toBlock: bigint }[] = [];
+    const client = { getBlockNumber: async () => 25_000n, getLogs: async (args: Record<string, unknown>) => { calls.push(args as { fromBlock: bigint; toBlock: bigint }); return []; } };
+    await getLogsInChunks(client, { address: v2Vault }, 1n);
+    expect(calls).toHaveLength(3);
+    expect(calls.every(({ fromBlock, toBlock }) => toBlock - fromBlock <= RPC_LOG_BLOCK_RANGE)).toBe(true);
+    expect(calls.at(-1)?.toBlock).toBe(25_000n);
+  });
+
+  it("uses indexed V2 history without invoking the RPC fallback", async () => {
+    const indexed: ActivityAnchor[] = [{ transaction_hash: "0x01", block_number: "10", event_name: "PositionCreated", payload: { beneficiary: owner, positionId: "1" } }];
+    let fallbackCalled = false;
+    const anchors = await preferIndexedV2Anchors(indexed, owner, async () => { fallbackCalled = true; return []; });
+    expect(fallbackCalled).toBe(false);
+    expect(anchors[0]).toMatchObject({ positionId: 1n, transactionHash: "0x01", blockNumber: 10n });
+  });
+
   it("represents position #1 with its V2 vault and Incoming Guard source", () => {
     const item = position("v2", 1n, 3_500_000n, 0n, 1_000_000n);
     expect(item.position.id).toBe(1n);
