@@ -45,6 +45,10 @@ import {
 } from "@/lib/base/data";
 import { compactAddress, formatBlockTimestamp } from "@/lib/base/format";
 import { groupActivity } from "@/lib/base/activity";
+import { AccountingCards } from "@/components/base/accounting/accounting-cards";
+import { ProtectionGraph } from "@/components/base/graph/protection-graph";
+import { humanizeError } from "@/components/base/status/error-message";
+import { canClaim, cooldownState, releaseProgress } from "@/lib/base/ui-state";
 import {
   IncomingGuardCreatePage,
   IncomingGuardDetailPage,
@@ -187,10 +191,10 @@ export function DashboardPage() {
   return (
     <Shell>
       <main className="base-page">
-        <section className="base-dashboard-hero">
+        <section className="base-dashboard-hero dashboard-hero-compact">
           <div>
             <span className="base-chip">{activeChain.name}</span>
-            <h1>Protection you can verify.</h1>
+            <h1>Your protection, clearly accounted for.</h1>
             <p>
               Transparent rules and non-cancelable vaults enforce the plan you
               chose.
@@ -202,38 +206,16 @@ export function DashboardPage() {
           </Link>
         </section>
         {data.warning && <p className="base-warning">{data.warning}</p>}
-        <section className="metric-grid">
-          <Metric
-            label="Wallet ETH"
-            value={`${Number(formatUnits(data.ethBalance, 18)).toFixed(5)} ETH`}
-          />
-          <Metric
-            label="Wallet USDC"
-            value={`${formatUnits(data.usdcBalance, data.decimals)} ${data.symbol}`}
-          />
-          <Metric
-            label="Committed / waiting"
-            value={`${formatUnits(data.committed, data.decimals)} ${data.symbol}`}
-          />
-          <Metric
-            label="Vault protected"
-            value={`${formatUnits(protectedTotal, data.decimals)} ${data.symbol}`}
-          />
-          <Metric
-            label="Claimable"
-            value={`${formatUnits(claimable, data.decimals)} ${data.symbol}`}
-          />
-          <Metric
-            label="Active guards"
-            value={data.guards
-              .filter((x) => ![6, 7].includes(x.guard.state))
-              .length.toString()}
-          />
-          <Metric
-            label="Vault positions"
-            value={data.positions.length.toString()}
-          />
-        </section>
+        <AccountingCards items={[
+          { label: "Wallet USDC", value: `${formatUnits(data.usdcBalance, data.decimals)} ${data.symbol}`, definition: "Held in your connected wallet.", primary: true },
+          { label: "Committed", value: `${formatUnits(data.committed, data.decimals)} ${data.symbol}`, definition: "Funded manual guards plus unprocessed Incoming Guard balances.", primary: true },
+          { label: "Vault Protected", value: `${formatUnits(protectedTotal, data.decimals)} ${data.symbol}`, definition: "Deposited principal that has not been claimed.", primary: true },
+          { label: "Claimable", value: `${formatUnits(claimable, data.decimals)} ${data.symbol}`, definition: "Vested principal currently available to claim.", primary: true },
+          { label: "ETH Gas Balance", value: `${Number(formatUnits(data.ethBalance, 18)).toFixed(5)} ETH`, definition: "Wallet ETH available for Base gas." },
+          { label: "Active Guards", value: data.guards.filter((x) => ![6, 7].includes(x.guard.state)).length.toString(), definition: "Manual rules that have not completed or deactivated." },
+          { label: "Vault Positions", value: data.positions.length.toString(), definition: "Discovered V1 and V2 release positions." },
+        ]} />
+        <ProtectionGraph compact />
         <section className="base-panel">
           <div className="section-heading">
             <div>
@@ -401,6 +383,7 @@ function ManualGuardDetailPage({ guardId }: { guardId: string }) {
   const [meta, setMeta] = useState({ symbol: "", decimals: 18 });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [now, setNow] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
   const { writeContractAsync } = useWriteContract();
   const client = usePublicClient({ chainId: activeChain.id });
   const load = useCallback(async () => {
@@ -427,6 +410,7 @@ function ManualGuardDetailPage({ guardId }: { guardId: string }) {
   useEffect(() => {
     void Promise.resolve().then(load);
   }, [load]);
+  useEffect(() => { const timer = window.setInterval(() => setNow(BigInt(Math.floor(Date.now() / 1000))), 1000); return () => window.clearInterval(timer); }, []);
   async function act(kind: "fund" | "execute" | "deactivate" | "complete") {
     if (!writesEnabled) {
       setError("Writes are disabled for this deployment environment.");
@@ -487,7 +471,7 @@ function ManualGuardDetailPage({ guardId }: { guardId: string }) {
         throw new Error("The transaction reverted.");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Transaction stopped.");
+      setError(humanizeError(e, "Transaction stopped."));
     } finally {
       setBusy("");
     }
@@ -503,6 +487,9 @@ function ManualGuardDetailPage({ guardId }: { guardId: string }) {
         </main>
       </Shell>
     );
+  const cooldown = guard ? cooldownState(guard.state, guard.eligibleAt, now) : { eligible: false, remaining: 0n };
+  const countdown = `${cooldown.remaining / 3600n}h ${(cooldown.remaining % 3600n) / 60n}m ${(cooldown.remaining % 60n)}s`;
+  const lifecycle = !guard ? "Loading" : guard.state === 1 ? "Rule Created" : guard.state === 2 && !cooldown.eligible ? "Cooldown Active" : guard.state === 3 || cooldown.eligible ? "Eligible" : guard.state === 5 ? "Protected in Vault" : guard.state === 6 ? "Released" : guardStates[guard.state] || "Unknown";
   return (
     <Shell>
       <main className="base-page">
@@ -526,7 +513,7 @@ function ManualGuardDetailPage({ guardId }: { guardId: string }) {
             <section className="base-panel detail-grid">
               <Metric
                 label="Current state"
-                value={guardStates[guard.state] || "Unknown"}
+                value={lifecycle}
               />
               <Metric
                 label="Protected amount"
@@ -541,8 +528,10 @@ function ManualGuardDetailPage({ guardId }: { guardId: string }) {
                 <p>
                   {guard.state === 1
                     ? "Approve the exact amount and arm this guard. Once funded, it cannot be deactivated."
-                    : guard.state === 2 || guard.state === 3
-                      ? "Execution is permissionless once the cooldown has elapsed."
+                    : guard.state === 2 && !cooldown.eligible
+                      ? `Cooldown active. Execution unlocks in ${countdown}.`
+                    : guard.state === 3 || cooldown.eligible
+                      ? "Cooldown complete. Protection is eligible for permissionless execution."
                     : guard.storedState === 5 && guard.state === 6
                       ? "The vault is fully claimed. Persist completion on the guard."
                       : guard.state === 5
@@ -573,10 +562,10 @@ function ManualGuardDetailPage({ guardId }: { guardId: string }) {
               {(guard.state === 2 || guard.state === 3) && (
                 <button
                   className="primary-button"
-                  disabled={!!busy}
+                  disabled={!!busy || !cooldown.eligible}
                   onClick={() => act("execute")}
                 >
-                  {busy ? "Working…" : "Execute protection"}
+                  {busy ? "Working…" : cooldown.eligible ? "Execute protection" : `Available in ${countdown}`}
                 </button>
               )}
               {guard.storedState === 5 && guard.state === 6 && (
@@ -613,6 +602,8 @@ export function VaultsPage() {
   const client = usePublicClient({ chainId: activeChain.id });
   const [busy, setBusy] = useState("");
   const [actionError, setActionError] = useState("");
+  const [vaultNow, setVaultNow] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  useEffect(() => { const timer = window.setInterval(() => setVaultNow(BigInt(Math.floor(Date.now() / 1000))), 60_000); return () => window.clearInterval(timer); }, []);
   async function claim(id: bigint, vaultAddress: Address) {
     if (!writesEnabled) {
       setActionError("Writes are disabled for this deployment environment.");
@@ -678,21 +669,12 @@ export function VaultsPage() {
                 className="base-vault-card"
                 key={`${x.version}:${x.vaultAddress}:${x.position.id}`}
               >
-                <div>
-                  <small>{x.version === "v2" ? "V2 Incoming Funds" : "V1 Manual"} · Position #{x.position.id.toString()}</small>
-                  <h3>
-                    {formatUnits(x.position.totalDeposited, data.decimals)}{" "}
-                    {data.symbol}
-                  </h3>
-                  <p>
-                    {formatUnits(x.protectedRemaining, data.decimals)} protected remaining ·{" "}
-                    {formatUnits(x.vested, data.decimals)} vested ·{" "}
-                    {formatUnits(x.claimable, data.decimals)} claimable
-                  </p>
-                  <p>
-                    {formatUnits(x.position.claimed, data.decimals)} claimed · release {formatBlockTimestamp(x.position.startTimestamp)} – {formatBlockTimestamp(x.position.endTimestamp)}
-                  </p>
-                  <p>
+                <div className="vault-content">
+                  <div className="vault-title"><div><small>{x.version === "v2" ? "Incoming Funds" : "Manual Guard"}</small><h3>Position #{x.position.id.toString()}</h3></div><span className="status-badge">Releasing</span></div>
+                  <dl className="vault-values"><div><dt>Deposited</dt><dd>{formatUnits(x.position.totalDeposited, data.decimals)} {data.symbol}</dd></div><div><dt>Still protected</dt><dd>{formatUnits(x.protectedRemaining, data.decimals)} {data.symbol}</dd></div><div><dt>Claimable</dt><dd>{formatUnits(x.claimable, data.decimals)} {data.symbol}</dd></div></dl>
+                  <div className="release-progress"><div><span>Release progress</span><strong>{releaseProgress(x.position.startTimestamp, x.position.endTimestamp, vaultNow).toFixed(0)}%</strong></div><progress max="100" value={releaseProgress(x.position.startTimestamp, x.position.endTimestamp, vaultNow)} /></div>
+                  <dl className="vault-metadata"><div><dt>Vested</dt><dd>{formatUnits(x.vested, data.decimals)} {data.symbol}</dd></div><div><dt>Claimed</dt><dd>{formatUnits(x.position.claimed, data.decimals)} {data.symbol}</dd></div><div><dt>Release start</dt><dd>{formatBlockTimestamp(x.position.startTimestamp)}</dd></div><div><dt>Release end</dt><dd>{formatBlockTimestamp(x.position.endTimestamp)}</dd></div></dl>
+                  <p className="explorer-links">
                     <a href={`${explorerUrl}/address/${x.vaultAddress}`} target="_blank" rel="noreferrer">Vault contract</a>
                     {x.sourceGuard && <> · <a href={`${explorerUrl}/address/${x.sourceGuard}`} target="_blank" rel="noreferrer">Source Incoming Guard</a></>}
                     {x.transactionHash && <> · <a href={`${explorerUrl}/tx/${x.transactionHash}`} target="_blank" rel="noreferrer">Creation transaction</a></>}
@@ -700,10 +682,10 @@ export function VaultsPage() {
                 </div>
                 <button
                   className="primary-button"
-                  disabled={x.claimable === 0n || busy === `${x.vaultAddress}:${x.position.id}`}
+                  disabled={!canClaim(x.claimable, writesEnabled) || busy === `${x.vaultAddress}:${x.position.id}`}
                   onClick={() => claim(x.position.id, x.vaultAddress)}
                 >
-                  {busy === `${x.vaultAddress}:${x.position.id}` ? "Claiming…" : "Claim available"}
+                  {busy === `${x.vaultAddress}:${x.position.id}` ? "Claiming…" : x.claimable > 0n ? "Claim available" : "Nothing claimable"}
                 </button>
               </article>
             ))}
@@ -761,13 +743,13 @@ export function ActivityPage() {
           />
         ) : (
           <div className="activity-groups">
-            {groups.map((group) => (
-              <article className="activity-group" key={group.key}>
-                <header><span><Icon name="shield" /></span><div><strong>{group.title}</strong><small>{group.guard ? `${compactAddress(group.guard as Address)} · ` : ""}{group.status}{group.timestamp ? ` · ${formatBlockTimestamp(BigInt(group.timestamp))}` : ""}</small></div>
+            {groups.map((group, groupIndex) => (
+              <details className="activity-group" key={group.key} open={groupIndex === 0}>
+                <summary><span><Icon name="shield" /></span><div><strong>{group.title}</strong><small>{group.guard ? `${compactAddress(group.guard as Address)} · ` : ""}{group.status}{group.timestamp ? ` · ${formatBlockTimestamp(BigInt(group.timestamp))}` : ""}</small></div>
                   {group.kind === "incoming" && <dl><div><dt>Processed</dt><dd>{formatUnits(BigInt(group.processedAmount || 0), 6)} USDC</dd></div><div><dt>Protected</dt><dd>{formatUnits(BigInt(group.protectedAmount || 0), 6)} USDC</dd></div><div><dt>Returned</dt><dd>{formatUnits(BigInt(group.returnedAmount || 0), 6)} USDC</dd></div></dl>}
-                </header>
+                </summary>
                 <ol>{group.steps.map(({ event, label, completed, amount }, index) => <li key={`${event.transaction_hash}-${event.log_index ?? event.event_name}-${index}`}><b aria-label={completed ? "Completed" : "Pending"}>{completed ? "✓" : "○"}</b><div><strong>{amount === null ? "" : amount ? `${formatUnits(BigInt(amount), 6)} USDC · ` : activityAmount(event.event_name, event.payload, 6, "USDC")}{label}</strong><small>{completed ? "Completed" : "Pending"} · Block {event.block_number}{event.block_timestamp ? ` · ${formatBlockTimestamp(BigInt(event.block_timestamp))}` : ""}</small></div><a href={`${activeChain.blockExplorers.default.url}/tx/${event.transaction_hash}`} target="_blank" rel="noreferrer" aria-label={`${label} transaction`}><Icon name="external" /></a></li>)}</ol>
-              </article>
+              </details>
             ))}
           </div>
         )}
@@ -777,7 +759,7 @@ export function ActivityPage() {
 }
 
 export function SettingsPage() {
-  const { address, chainId } = useAccount();
+  const { address, chainId, data } = useWalletData();
   const [version, setVersion] = useState("Unavailable");
   const [rpc, setRpc] = useState("Checking…");
   useEffect(() => {
@@ -801,20 +783,20 @@ export function SettingsPage() {
     <Shell>
       <main className="base-page">
         <Header
-          eyebrow="Settings / Network"
-          title="Base connection"
-          body="Deployment and network details are shown without fallback addresses."
+          eyebrow="Settings"
+          title="Wallet and network"
+          body="Your account context first, with complete contract transparency when you need it."
         />
-        <section className="base-panel settings-list">
+        <section className="base-panel"><div className="section-heading"><div><p className="eyebrow">Wallet & Network</p><h2>Connected account</h2></div></div><div className="settings-list">
           <Row label="Connected wallet" value={address || "Not connected"} />
-          <Row
-            label="Connected chain"
-            value={chainId ? `${chainId}` : "Not connected"}
-          />
+          <Row label="ETH balance" value={data ? `${Number(formatUnits(data.ethBalance, 18)).toFixed(5)} ETH` : "—"} />
+          <Row label="USDC balance" value={data ? `${formatUnits(data.usdcBalance, data.decimals)} ${data.symbol}` : "—"} />
+          <Row label="Selected network" value={chainId ? `${activeChain.name} · ${chainId}` : "Not connected"} />
+        </div></section>
+        <section className="base-panel"><div className="section-heading"><div><p className="eyebrow">Protection Preferences</p><h2>Interface behavior</h2></div></div><p className="muted-copy">AVERLOCK currently follows your connected wallet and system accessibility preferences. No unsupported preference is simulated or stored.</p></section>
+        <details className="base-panel contract-details"><summary><span><small>Advanced / Contracts</small><strong>Deployment transparency</strong></span><span>Expand</span></summary><div className="settings-list">
           <Row label="Environment" value={deploymentEnvironment} />
           <Row label="Product network" value={`${activeChain.name} · ${activeChain.id}`} />
-          <Row label="Gas token" value="ETH" />
-          <Row label="Supported protection asset" value="USDC · 6 decimals" />
           <Row
             label="RPC / contracts"
             value={deploymentConfigured ? rpc : "Not configured"}
@@ -826,16 +808,26 @@ export function SettingsPage() {
             link={activeDeployment.contracts.manual?.guardManager && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.manual.guardManager}`}
           />
           <Row
-            label="ProtectionVault"
+            label="Legacy Vault"
             value={activeDeployment.contracts.manual?.protectionVault || "Not deployed"}
             link={activeDeployment.contracts.manual?.protectionVault && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.manual.protectionVault}`}
           />
           <Row
-            label="Approved token"
+            label="V2 Vault"
+            value={activeDeployment.contracts.v2?.protectionVault || "Not deployed"}
+            link={activeDeployment.contracts.v2?.protectionVault && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.v2.protectionVault}`}
+          />
+          <Row
+            label="Incoming Guard Factory"
+            value={activeDeployment.contracts.v2?.incomingFundsGuardFactory || "Not deployed"}
+            link={activeDeployment.contracts.v2?.incomingFundsGuardFactory && `${activeChain.blockExplorers.default.url}/address/${activeDeployment.contracts.v2.incomingFundsGuardFactory}`}
+          />
+          <Row
+            label="USDC"
             value={baseContracts.approvedToken}
             link={`${activeChain.blockExplorers.default.url}/address/${baseContracts.approvedToken}`}
           />
-        </section>
+        </div></details>
       </main>
     </Shell>
   );
@@ -1128,7 +1120,7 @@ function ManualCreateGuardPage({ onIncoming }: { onIncoming: () => void }) {
 }
 
 export function CreateGuardPage() {
-  const [kind, setKind] = useState<"manual" | "incoming">("manual");
+  const [kind, setKind] = useState<"manual" | "incoming">("incoming");
   return kind === "incoming"
     ? <IncomingGuardCreatePage onManual={() => setKind("manual")} />
     : <ManualCreateGuardPage onIncoming={() => setKind("incoming")} />;

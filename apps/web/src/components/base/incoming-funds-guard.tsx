@@ -44,12 +44,12 @@ import {
   validProtectPercent,
 } from "@/lib/base/incoming";
 import { compactAddress } from "@/lib/base/format";
+import { humanizeError } from "@/components/base/status/error-message";
+import { splitPreview } from "@/lib/base/ui-state";
 
 const v2Available = hasV2Contracts(activeDeployment);
 const readableError = (error: unknown, fallback: string) => {
-  if (error && typeof error === "object" && "shortMessage" in error)
-    return String((error as { shortMessage?: string }).shortMessage || fallback);
-  return error instanceof Error ? error.message : fallback;
+  return humanizeError(error, fallback);
 };
 const Shell = ({ children }: { children: React.ReactNode }) => (
   <div className="base-shell"><TopNav />{children}</div>
@@ -80,7 +80,9 @@ export function IncomingGuardCreatePage({ onManual }: { onManual: () => void }) 
   const [predictionBusy, setPredictionBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
   const available = availablePercent(form.protectPercent);
+  const preview = splitPreview(form.protectPercent);
   const threshold = (() => {
     try { return parseUnits(form.threshold || "0", 6); } catch { return 0n; }
   })();
@@ -186,8 +188,8 @@ export function IncomingGuardCreatePage({ onManual }: { onManual: () => void }) 
       <main className="base-page">
         <header className="base-page-header">
           <p className="eyebrow">Create Guard</p>
-          <h1>Incoming Funds Guard</h1>
-          <p>Funds sent to this dedicated Guard address are evaluated against your rule.</p>
+          <h1>Build your incoming protection rule</h1>
+          <p>Create a dedicated address that automatically routes qualifying incoming USDC according to your onchain plan.</p>
         </header>
         <div className="guard-type-choice" aria-label="Guard type">
           <button className="secondary-button" onClick={onManual}>Manual / Cooldown Guard</button>
@@ -215,32 +217,32 @@ export function IncomingGuardCreatePage({ onManual }: { onManual: () => void }) 
                   placeholder="Enter threshold" />
                 <small>Example: 500 USDC. No funds move when the rule is created.</small>
               </label>
-              <label>Protection percentage
+              <label>Protect %
                 <input type="number" min="0.01" max="100" step="0.01" value={form.protectPercent}
                   onChange={(event) => setForm({ ...form, protectPercent: event.target.value })}
                   placeholder="Enter percentage" />
-                <small>Available to owner: {available === null ? "—" : `${available}%`}</small>
+                <small>The protected share enters your release vault.</small>
+              </label>
+              <label>Available %
+                <input value={available === null ? "" : `${available}%`} readOnly placeholder="Calculated automatically" />
+                <small>Returned to your owner wallet when protection is processed.</small>
               </label>
               <label>Release duration
                 <input type="number" min="1" max="365" value={form.releaseDays}
-                  onChange={(event) => setForm({ ...form, releaseDays: event.target.value })} />
+                  onChange={(event) => setForm({ ...form, releaseDays: event.target.value })} placeholder="e.g. 30" />
                 <small>days</small>
               </label>
-              <label>Rule ID
-                <input value={ruleId} disabled />
-                <small>Generated with cryptographically secure browser randomness.</small>
-              </label>
+              <details className="advanced-details"><summary>Advanced details</summary><div><small>Rule ID</small><code>{compactAddress(ruleId, 12, 10)}</code><button type="button" className="text-button" onClick={async () => { await navigator.clipboard.writeText(ruleId); setCopied("rule"); }}>{copied === "rule" ? "Copied" : "Copy full ID"}</button><p>Generated automatically with secure browser randomness.</p></div></details>
             </div>
             <aside className="base-panel review-card">
               <p className="eyebrow">Preview</p>
-              <h2>{form.threshold || "—"} USDC threshold</h2>
-              <p>
-                Protect {form.protectPercent || "—"}% · Available {available === null ? "—" : available}% · Release over {form.releaseDays || "—"} days.
-              </p>
+              <h2>Live rule preview</h2>
+              <div className="rule-preview"><p>If incoming funds ≥ <strong>{form.threshold || "—"} USDC</strong></p><p>Protect <strong>{preview ? `${preview.protected}%` : "—"}</strong></p><p>Keep <strong>{preview ? `${preview.available}%` : "—"}</strong> available</p><p>Release protected funds over <strong>{form.releaseDays || "—"} days</strong></p></div>
               <div className="dedicated-address">
-                <small>Future Incoming Guard address</small>
+                <small>Predicted Guard Address</small>
                 <strong>{predictionBusy ? "Predicting…" : predicted || "Complete the rule to predict"}</strong>
-                {predicted && <a href={`${explorerUrl}/address/${predicted}`} target="_blank" rel="noreferrer">View predicted address <Icon name="external" /></a>}
+                <p>This deterministic address will receive funds for this rule. It does not exist until creation is confirmed.</p>
+                {predicted && <div className="address-actions"><button type="button" className="text-button" onClick={async () => { await navigator.clipboard.writeText(predicted); setCopied("address"); }}>{copied === "address" ? "Copied" : "Copy address"}</button><a href={`${explorerUrl}/address/${predicted}`} target="_blank" rel="noreferrer">View prediction <Icon name="external" /></a></div>}
               </div>
               <div className="base-notice"><Icon name="shield" /><span>
                 Funds are not pulled from your normal wallet. Send qualifying USDC to this dedicated address after creation.
@@ -362,27 +364,25 @@ export function IncomingGuardDetailPage({ guardAddress }: { guardAddress: Addres
       !guard ? <section className="base-state"><h2>Reading Incoming Guard</h2><p>Loading authoritative contract state.</p></section> : <>
         <header className="base-page-header">
           <p className="eyebrow">Incoming Funds Guard</p>
-          <h1>{status}</h1>
+          <span className={`status-badge ${ready ? "status-ready" : ""}`}>{status}</span>
+          <h1>Your incoming protection lifecycle</h1>
           <p>Funds sent to this dedicated Guard address are evaluated against your rule.</p>
         </header>
         <section className="base-panel detail-grid incoming-detail-grid">
-          <Metric label="Owner" value={compactAddress(guard.owner, 10, 8)} />
-          <Metric label="Guard address" value={compactAddress(guardAddress, 10, 8)} />
-          <Metric label="USDC held" value={`${formatUnits(guard.balance, 6)} USDC`} />
+          <Metric label="Guard balance" value={`${formatUnits(guard.balance, 6)} USDC`} />
           <Metric label="Threshold" value={`${formatUnits(guard.threshold, 6)} USDC`} />
-          <Metric label="Protected" value={`${guard.protectBps / 100}%`} />
+          <Metric label="Protect" value={`${guard.protectBps / 100}%`} />
           <Metric label="Available" value={`${100 - guard.protectBps / 100}%`} />
-          <Metric label="Release duration" value={`${Number(guard.releaseDuration) / 86400} days`} />
-          <Metric label="Threshold reached" value={ready ? "Yes" : "No"} />
-          <Metric label="Process eligibility" value={ready ? "Eligible — permissionless" : "Below threshold"} />
+          <Metric label="Release" value={`${Number(guard.releaseDuration) / 86400} days`} />
           <Metric label="Times processed" value={guard.processingCount.toString()} />
         </section>
+        <section className="lifecycle-graph" aria-label="Incoming Guard lifecycle"><ol><li><b>Dedicated Guard</b><small>{compactAddress(guardAddress)}</small></li><li><b>Threshold</b><small>{formatUnits(guard.threshold, 6)} USDC</small></li><li><b>Split</b><small>{guard.protectBps / 100}% protected</small></li><li><b>Wallet + Vault</b><small>Programmed routing</small></li><li><b>Release</b><small>{Number(guard.releaseDuration) / 86400} days</small></li></ol></section>
         <section className="base-panel settings-list">
           <div><small>Dedicated Guard</small><a href={`${explorerUrl}/address/${guardAddress}`} target="_blank" rel="noreferrer">{guardAddress}<Icon name="external" /></a></div>
           <div><small>V2 ProtectionVault</small><a href={`${explorerUrl}/address/${guard.vault}`} target="_blank" rel="noreferrer">{guard.vault}<Icon name="external" /></a></div>
         </section>
         <section className="base-panel action-row incoming-actions">
-          <div><h2>Dedicated deposit address</h2><p>Send test USDC to the Guard address using your wallet. AVERLOCK does not automatically monitor or pull from your wallet.</p></div>
+          <div><h2>{ready ? "Ready to process protection" : "Waiting for threshold"}</h2><p>{ready ? "This action is permissionless and will execute the programmed split." : `Your guard needs ${formatUnits(guard.threshold - guard.balance, 6)} more USDC before it can process.`}</p></div>
           <button className="secondary-button" onClick={async () => {
             await navigator.clipboard.writeText(guardAddress);
             setCopied(true);

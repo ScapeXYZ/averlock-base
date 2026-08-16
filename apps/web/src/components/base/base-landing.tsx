@@ -1,104 +1,19 @@
 import Link from "next/link";
 import { Icon } from "@/components/dashboard/icons";
+import { ProtectionGraph } from "@/components/base/graph/protection-graph";
 import { activeChain, deploymentEnvironment, writesEnabled } from "@/lib/base/config";
+
 export function BaseLanding() {
-  return (
-    <main className="base-landing">
-      <nav>
-        <Link className="wordmark" href="/">
-          <span className="logo-mark">
-            <Icon name="shield" />
-          </span>
-          <span>AVERLOCK</span>
-        </Link>
-        <span className="base-chip">{activeChain.name}</span>
-      </nav>
-      <section className="landing-hero">
-        <div>
-          <p className="landing-kicker">Protection rules for Base</p>
-          <h1>
-            Protect your gains.
-            <br />
-            Enforce your discipline.
-          </h1>
-          <p>
-            AVERLOCK turns a plan into transparent smart-contract rules. Commit
-            approved funds, let the rule enforce the cooldown, and release value
-            on the schedule you chose.
-          </p>
-          <div className="landing-actions">
-            <Link className="primary-button" href="/dashboard">
-              Launch AVERLOCK <Icon name="arrow" />
-            </Link>
-            <a className="entry-secondary" href="#how">
-              See how it works
-            </a>
-          </div>
-          <small>
-            No fake balances. No hidden execution. Contract state is the source
-            of truth.
-          </small>
-        </div>
-        <aside className="canva-slot" aria-label="AVERLOCK contract flow">
-          <span>Public on-chain protection</span>
-          <strong>Guard → Vault</strong>
-          <p>USDC protection on {activeChain.name}. ETH is used only for gas.</p>
-          <div>
-            <b>{activeChain.id}</b>
-            <small>{activeChain.name}</small>
-          </div>
-        </aside>
-      </section>
-      <section id="how" className="landing-steps">
-        {[
-          [
-            "shield",
-            "Create a rule",
-            "Choose an approved asset, amount, cooldown, and release schedule.",
-          ],
-          [
-            "lock",
-            "Protect funds",
-            "Approve the exact amount and arm the guard in a separate transaction.",
-          ],
-          [
-            "vault",
-            "Enter the vault",
-            "Once eligible, execution creates a real non-cancelable vault position.",
-          ],
-          [
-            "wallet",
-            "Release by schedule",
-            "Claim only what the contract says has vested.",
-          ],
-        ].map((x, i) => (
-          <article key={x[1]}>
-            <b>0{i + 1}</b>
-            <Icon name={x[0]} />
-            <h2>{x[1]}</h2>
-            <p>{x[2]}</p>
-          </article>
-        ))}
-      </section>
-      <section className="diagram-slot">
-        <div>
-          <p className="eyebrow">Contract lifecycle</p>
-          <h2>Guard → Trigger → Vault → Release</h2>
-          <p>
-            Contract reads are authoritative. The optional event indexer supplies
-            discovery and history without controlling current state.
-          </p>
-        </div>
-        <span>USDC protection · ETH gas · BaseScan receipts</span>
-      </section>
-      <footer>
-        <span>AVERLOCK</span>
-        <p>
-          {deploymentEnvironment === "production" && !writesEnabled
-            ? "Base Mainnet deployment is unavailable. Execution is disabled."
-            : `Currently configured for ${activeChain.name}.`}
-        </p>
-      </footer>
-    </main>
-  );
+  return <main className="base-landing">
+    <nav><Link className="wordmark" href="/" aria-label="AVERLOCK home"><span className="logo-mark"><Icon name="shield" /></span><span>AVERLOCK</span></Link><span className="base-chip">Built on Base · {activeChain.name}</span></nav>
+    <section className="landing-hero">
+      <div className="landing-copy"><p className="landing-kicker">Programmable protection on Base</p><h1>Protect incoming funds before discipline becomes a decision.</h1><p>Route qualifying USDC through a dedicated Incoming Guard, keep a chosen share available, and release protected principal on a schedule you cannot cancel.</p><div className="landing-actions"><Link className="primary-button" href="/guards/new">Create a protection rule <Icon name="arrow" /></Link><Link className="entry-secondary" href="/dashboard">Open dashboard</Link></div><ul className="trust-list"><li>Non-custodial</li><li>Transparent onchain execution</li><li>Non-cancelable release vaults</li></ul></div>
+      <ProtectionGraph />
+    </section>
+    <section id="how" className="landing-steps">
+      {[["shield", "Dedicated Incoming Guard", "Receive USDC at a deterministic address owned by your rule."], ["pulse", "Programmable split", "Process funds only after the onchain threshold is reached."], ["lock", "Protection Vault", "Protected principal enters a non-cancelable linear release."], ["wallet", "Verifiable release", "Claim only the amount the vault reports as vested."]].map((item, index) => <article key={item[1]}><b>0{index + 1}</b><Icon name={item[0]} /><h2>{item[1]}</h2><p>{item[2]}</p></article>)}
+    </section>
+    <section className="protocol-statement"><div><p className="eyebrow">Designed for credible commitment</p><h2>Your plan becomes infrastructure.</h2></div><p>AVERLOCK never invents account state. Wallet balances come from live reads, transactions require explicit wallet confirmation, and every protection outcome is traceable on Base.</p></section>
+    <footer><span>AVERLOCK</span><p>{deploymentEnvironment === "production" && !writesEnabled ? "Base Mainnet contracts are not live. Mainnet execution remains disabled." : `Staging on ${activeChain.name}.`}</p></footer>
+  </main>;
 }

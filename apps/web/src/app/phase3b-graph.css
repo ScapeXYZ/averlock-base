@@ -1,0 +1,6 @@
+@media (min-width: 701px) {
+  .protection-graph:not(.protection-graph--compact) .graph-canvas { height: 570px; }
+  .protection-graph:not(.protection-graph--compact) .graph-grid { grid-template-rows: repeat(7, 54px); }
+  .protection-graph:not(.protection-graph--compact) .graph-node--vault { display: block; grid-column: 3; grid-row: 6; }
+  .protection-graph:not(.protection-graph--compact) .graph-node--release { display: block; grid-column: 3; grid-row: 7; }
+}
