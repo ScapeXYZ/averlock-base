@@ -44,6 +44,7 @@ import {
   type BaseGuard,
 } from "@/lib/base/data";
 import { compactAddress, formatBlockTimestamp } from "@/lib/base/format";
+import { groupActivity } from "@/lib/base/activity";
 import {
   IncomingGuardCreatePage,
   IncomingGuardDetailPage,
@@ -60,18 +61,6 @@ function Shell({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
-}
-const activityNames: Record<string, string> = {
-  IncomingGuardCreated: "Incoming Guard created",
-  GuardFunded: "Manual guard funded",
-  IncomingFundsReceived: "USDC received by Incoming Guard",
-  IncomingFundsProcessed: "Protection processed",
-  AvailableFundsReturned: "Available amount returned",
-  PositionCreated: "Vault position created",
-  Claimed: "Vault funds claimed",
-};
-function activityName(eventName: string) {
-  return activityNames[eventName] || eventName.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 function activityAmount(eventName: string, payload: Record<string, string | number | boolean>, decimals: number, symbol: string) {
   const raw = eventName === "IncomingFundsProcessed" ? payload.protectedAmount : payload.amount ?? payload.processedAmount ?? payload.availableAmount;
@@ -730,6 +719,7 @@ export function ActivityPage() {
   const [items, setItems] = useState<Awaited<ReturnType<typeof discoverActivity>>["items"]>([]);
   const [warning, setWarning] = useState("");
   const [loadedFor, setLoadedFor] = useState("");
+  const groups = groupActivity(items);
   useEffect(() => {
     if (address && chainId === activeChain.id) {
       discoverActivity(address)
@@ -764,33 +754,20 @@ export function ActivityPage() {
             title="Loading activity"
             body="Reading confirmed AVERLOCK events from the optional indexer."
           />
-        ) : !items.length ? (
+        ) : !groups.length ? (
           <State
             title="No activity discovered"
             body="No confirmed AVERLOCK transactions are available for this wallet."
           />
         ) : (
-          <div className="activity-simple">
-            {items.map((x) => (
-              <a
-                key={`${x.transaction_hash}-${x.log_index ?? x.event_name}`}
-                href={`${activeChain.blockExplorers.default.url}/tx/${x.transaction_hash}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <span>
-                  <Icon name="shield" />
-                </span>
-                <div>
-                  <strong>{activityName(x.event_name)}</strong>
-                  <small>
-                    {activityAmount(x.event_name, x.payload, 6, "USDC")}
-                    {x.status || "Confirmed"} · Block {x.block_number}
-                    {x.block_timestamp ? ` · ${formatBlockTimestamp(BigInt(x.block_timestamp))}` : ""}
-                  </small>
-                </div>
-                <Icon name="external" />
-              </a>
+          <div className="activity-groups">
+            {groups.map((group) => (
+              <article className="activity-group" key={group.key}>
+                <header><span><Icon name="shield" /></span><div><strong>{group.title}</strong><small>{group.guard ? `${compactAddress(group.guard as Address)} · ` : ""}{group.status}{group.timestamp ? ` · ${formatBlockTimestamp(BigInt(group.timestamp))}` : ""}</small></div>
+                  {group.kind === "incoming" && <dl><div><dt>Processed</dt><dd>{formatUnits(BigInt(group.processedAmount || 0), 6)} USDC</dd></div><div><dt>Protected</dt><dd>{formatUnits(BigInt(group.protectedAmount || 0), 6)} USDC</dd></div><div><dt>Returned</dt><dd>{formatUnits(BigInt(group.returnedAmount || 0), 6)} USDC</dd></div></dl>}
+                </header>
+                <ol>{group.steps.map(({ event, label, completed, amount }, index) => <li key={`${event.transaction_hash}-${event.log_index ?? event.event_name}-${index}`}><b aria-label={completed ? "Completed" : "Pending"}>{completed ? "✓" : "○"}</b><div><strong>{amount === null ? "" : amount ? `${formatUnits(BigInt(amount), 6)} USDC · ` : activityAmount(event.event_name, event.payload, 6, "USDC")}{label}</strong><small>{completed ? "Completed" : "Pending"} · Block {event.block_number}{event.block_timestamp ? ` · ${formatBlockTimestamp(BigInt(event.block_timestamp))}` : ""}</small></div><a href={`${activeChain.blockExplorers.default.url}/tx/${event.transaction_hash}`} target="_blank" rel="noreferrer" aria-label={`${label} transaction`}><Icon name="external" /></a></li>)}</ol>
+              </article>
             ))}
           </div>
         )}
