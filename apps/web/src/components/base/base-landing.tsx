@@ -2,12 +2,13 @@ import Link from "next/link";
 import { Icon } from "@/components/dashboard/icons";
 import { ProtectionGraph } from "@/components/base/graph/protection-graph";
 import { activeChain, deploymentEnvironment, writesEnabled } from "@/lib/base/config";
+import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 
 export function BaseLanding() {
   return <main className="base-landing">
-    <nav><Link className="wordmark" href="/" aria-label="AVERLOCK home"><span className="logo-mark"><Icon name="shield" /></span><span>AVERLOCK</span></Link><span className="base-chip">Built on Base · {activeChain.name}</span></nav>
+    <nav><Link className="wordmark" href="/" aria-label="AVERLOCK home"><span className="logo-mark"><Icon name="shield" /></span><span>AVERLOCK</span></Link><div className="landing-nav-actions"><ThemeToggle/><span className="base-chip">Built on Base · {activeChain.name}</span></div></nav>
     <section className="landing-hero">
-      <div className="landing-copy"><p className="landing-kicker">Programmable protection on Base</p><h1>Protect incoming funds before discipline becomes a decision.</h1><p>Route qualifying USDC through a dedicated Incoming Guard, keep a chosen share available, and release protected principal on a schedule you cannot cancel.</p><div className="landing-actions"><Link className="primary-button" href="/guards/new">Create a protection rule <Icon name="arrow" /></Link><Link className="entry-secondary" href="/dashboard">Open dashboard</Link></div><ul className="trust-list"><li>Non-custodial</li><li>Transparent onchain execution</li><li>Non-cancelable release vaults</li></ul></div>
+      <div className="landing-copy"><p className="landing-kicker">Programmable protection on Base</p><h1>Programmable protection for your gains.</h1><p>Set a threshold, choose what percentage to protect, and route qualifying funds into a non-cancelable release vault.</p><div className="landing-actions"><Link className="primary-button" href="/guards/new">Create a protection rule <Icon name="arrow" /></Link><Link className="entry-secondary" href="/dashboard">Open dashboard</Link></div><ul className="trust-list"><li>Non-custodial</li><li>Transparent onchain execution</li><li>Non-cancelable release vaults</li></ul></div>
       <ProtectionGraph />
     </section>
     <section id="how" className="landing-steps">

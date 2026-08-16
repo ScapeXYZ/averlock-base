@@ -5,6 +5,7 @@ import { Icon } from "./icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { activeChain } from "@/lib/base/config";
+import { ThemeToggle } from "./theme-toggle";
 
 export function TopNav(props: { onVerify?: () => void } = {}) {
   void props.onVerify;
@@ -15,6 +16,6 @@ export function TopNav(props: { onVerify?: () => void } = {}) {
     <nav aria-label="Primary navigation">
       {links.map((link) => <Link key={link.href} className={link.active ? "active" : ""} href={link.href} aria-current={link.active ? "page" : undefined}>{link.label}</Link>)}
     </nav>
-    <div className="nav-actions"><span className="network-pill"><span/>{activeChain.name}</span><WalletControl/></div>
+    <div className="nav-actions"><ThemeToggle/><span className="network-pill"><span/>{activeChain.name}</span><WalletControl/></div>
   </header><nav className="mobile-primary-nav" aria-label="Mobile primary navigation">{links.map((link) => <Link key={link.href} className={link.active ? "active" : ""} href={link.href} aria-current={link.active ? "page" : undefined}><Icon name={link.icon}/><span>{link.label}</span></Link>)}</nav></>;
 }
